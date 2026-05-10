@@ -866,6 +866,93 @@ body {
 .plaid-account-type { font-size: 0.7rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
 .plaid-account-map { min-width: 180px; max-width: 100%; }
 
+/* ===== EXPORT BAR ===== */
+.export-bar {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+.btn-sm { padding: 8px 14px; font-size: 0.82rem; }
+
+/* ===== INLINE PLAID CARDS (Monthly / Year) ===== */
+.cash-snapshot-card,
+.recurring-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.css-head-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.css-title { font-weight: 700; font-size: 0.95rem; }
+.css-time  { font-size: 0.72rem; color: var(--text3); }
+.css-headline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px; margin-bottom: 12px;
+}
+.css-cell {
+  background: linear-gradient(135deg, rgba(124,110,248,0.08), rgba(244,185,66,0.05));
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+.css-num {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.6rem; font-weight: 800; line-height: 1;
+}
+.css-num.positive { color: var(--success); }
+.css-num.negative { color: var(--danger); }
+.css-label {
+  font-size: 0.72rem; color: var(--text3); margin-top: 6px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.css-account-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.css-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 14px;
+}
+.css-name { font-weight: 600; font-size: 0.88rem; }
+.css-sub  { font-size: 0.72rem; color: var(--text3); margin-top: 2px; }
+.css-amt  { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; }
+.css-amt.positive { color: var(--success); }
+.css-amt.negative { color: var(--danger); }
+
+/* Recurring card */
+.rec-section { margin-top: 12px; }
+.rec-section-h {
+  font-size: 0.75rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.rec-section-h.warning { color: var(--warning); }
+.rec-section-h.success { color: var(--success); }
+.rec-stream {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 14px;
+  margin-bottom: 6px;
+}
+.rec-stream.matched { border-left: 3px solid var(--success); }
+.rec-stream.missing { border-left: 3px solid var(--warning); }
+.rec-info { flex: 1; min-width: 0; }
+.rec-name { font-weight: 600; font-size: 0.88rem; }
+.rec-meta { font-size: 0.7rem; color: var(--text3); margin-top: 2px; }
+.rec-amt  { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; }
+.rec-amt.warning { color: var(--warning); }
+
+/* Bill source tag */
+.bill-source {
+  display: inline-block;
+  font-size: 0.65rem; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px; margin-left: 6px;
+  background: rgba(244,185,66,0.15); color: var(--gold);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.bill-source.missing { background: rgba(255,179,71,0.18); color: var(--warning); }
+
 /* ===== PLAID INSIGHTS ===== */
 .plaid-balances { display: flex; flex-direction: column; gap: 14px; }
 .plaid-balance-headline {

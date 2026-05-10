@@ -436,6 +436,155 @@ Give concise, actionable advice using specific dollar amounts from their data. B
 });
 
 // ───────────────────────────────────────────────
+// CSV EXPORT (tax + general reports)
+// ───────────────────────────────────────────────
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function rowsToCsv(headers, rows) {
+  return [headers.join(','), ...rows.map(r => headers.map(h => csvEscape(r[h])).join(','))].join('\r\n');
+}
+function flattenMonth(year, monthName, monthData) {
+  const out = [];
+  const sections = [
+    { key: 'income',           label: 'Income',           nameKey: 'source',   amtKey: 'actual',       sign: +1 },
+    { key: 'fixedExpenses',    label: 'Fixed Expense',    nameKey: 'category', amtKey: 'actual',       sign: -1 },
+    { key: 'variableExpenses', label: 'Variable Expense', nameKey: 'category', amtKey: 'actual',       sign: -1 },
+    { key: 'debt',             label: 'Debt Payment',     nameKey: 'category', amtKey: 'payment',      sign: -1 },
+    { key: 'savings',          label: 'Savings',          nameKey: 'goal',     amtKey: 'contribution', sign: -1 }
+  ];
+  for (const s of sections) {
+    for (const item of (monthData?.[s.key] || [])) {
+      const groupName = item[s.nameKey] || '—';
+      const account   = item.account || '';
+      if (item.entries && item.entries.length) {
+        for (const e of item.entries) {
+          out.push({
+            Date: e.date || '',
+            Year: year,
+            Month: monthName,
+            Section: s.label,
+            Category: groupName,
+            Description: e.desc || '',
+            Account: e.account || account,
+            Amount: ((e.amount || 0) * s.sign).toFixed(2),
+            'Plaid ID': e.plaidId || ''
+          });
+        }
+      } else {
+        out.push({
+          Date: '', Year: year, Month: monthName,
+          Section: s.label, Category: groupName,
+          Description: '(monthly total)',
+          Account: account,
+          Amount: ((item[s.amtKey] || 0) * s.sign).toFixed(2),
+          'Plaid ID': ''
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// Full month CSV (every entry, signed)
+app.get('/api/export/month/:year/:month.csv', requireAuth, (req, res) => {
+  const data = readUserData(req.session.userId);
+  const md = data?.data?.[req.params.year]?.months?.[req.params.month];
+  if (!md) return res.status(404).send('Month not found');
+  const rows = flattenMonth(req.params.year, req.params.month, md);
+  const headers = ['Date','Year','Month','Section','Category','Description','Account','Amount','Plaid ID'];
+  const csv = rowsToCsv(headers, rows);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="tally-${req.params.year}-${req.params.month}.csv"`);
+  res.send(csv);
+});
+
+// Full year CSV (every entry across all months)
+app.get('/api/export/year/:year.csv', requireAuth, (req, res) => {
+  const data = readUserData(req.session.userId);
+  const yd = data?.data?.[req.params.year];
+  if (!yd) return res.status(404).send('Year not found');
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const rows = [];
+  for (const m of months) {
+    const md = yd.months?.[m];
+    if (!md) continue;
+    rows.push(...flattenMonth(req.params.year, m, md));
+  }
+  const headers = ['Date','Year','Month','Section','Category','Description','Account','Amount','Plaid ID'];
+  const csv = rowsToCsv(headers, rows);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="tally-${req.params.year}-full.csv"`);
+  res.send(csv);
+});
+
+// Tax-focused CSV: grouped & totaled by IRS-relevant buckets
+app.get('/api/export/tax/:year.csv', requireAuth, (req, res) => {
+  const data = readUserData(req.session.userId);
+  const yd = data?.data?.[req.params.year];
+  if (!yd) return res.status(404).send('Year not found');
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  // Buckets relevant for tax filing (Schedule A itemized + Schedule C self-employed + 1099 income)
+  const bucketRules = [
+    { bucket: '1099/Self-Employment Income', test: (s, c) => s === 'Income' && /business|freelance|1099|brand|content|misc/i.test(c) },
+    { bucket: 'W-2 / Salary Income',          test: (s, c) => s === 'Income' && /salary|wages|w-?2/i.test(c) },
+    { bucket: 'Other Income',                 test: (s, c) => s === 'Income' },
+
+    { bucket: 'Charitable Contributions',     test: (s, c) => /charit|tithe|donat/i.test(c) },
+    { bucket: 'Medical & Dental',             test: (s, c) => /medical|health|dental|pharmacy|vision/i.test(c) },
+    { bucket: 'Mortgage / Rent / Utilities',  test: (s, c) => /rent|mortgage|util|wifi|electric|gas\b|water/i.test(c) },
+    { bucket: 'Education',                    test: (s, c) => /school|education|tuition|extra-curricular/i.test(c) },
+    { bucket: 'Childcare',                    test: (s, c) => /childcare|daycare|baby/i.test(c) },
+    { bucket: 'Business Expenses',            test: (s, c) => /business|misc business|office/i.test(c) },
+    { bucket: 'Auto Expenses',                test: (s, c) => /auto|car|gas\b|vehicle|maintenance|insurance/i.test(c) },
+    { bucket: 'Student-Loan Interest',        test: (s, c) => /student loan/i.test(c) }
+  ];
+  function bucketize(section, category) {
+    for (const r of bucketRules) if (r.test(section, category)) return r.bucket;
+    return null;
+  }
+
+  const summary = {};
+  const detail  = [];
+
+  for (const m of months) {
+    const md = yd.months?.[m];
+    if (!md) continue;
+    const flat = flattenMonth(req.params.year, m, md);
+    for (const r of flat) {
+      const bucket = bucketize(r.Section, r.Category);
+      if (!bucket) continue;
+      const amt = parseFloat(r.Amount) || 0;
+      summary[bucket] = (summary[bucket] || 0) + amt;
+      detail.push({ ...r, 'Tax Bucket': bucket });
+    }
+  }
+
+  // Build a CSV with two stacked sections: Summary then Detail
+  const sumRows = Object.entries(summary)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .map(([Bucket, Total]) => ({ Bucket, Total: Total.toFixed(2) }));
+
+  const lines = [];
+  lines.push(`Tally AI — Tax Report for ${req.params.year}`);
+  lines.push(`Generated ${new Date().toISOString().split('T')[0]}`);
+  lines.push('');
+  lines.push('— SUMMARY —');
+  lines.push(rowsToCsv(['Bucket','Total'], sumRows));
+  lines.push('');
+  lines.push('— DETAIL —');
+  lines.push(rowsToCsv(['Date','Year','Month','Section','Category','Description','Account','Amount','Plaid ID','Tax Bucket'], detail));
+
+  const csv = lines.join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="tally-tax-${req.params.year}.csv"`);
+  res.send(csv);
+});
+
+// ───────────────────────────────────────────────
 // PLAID INTEGRATION
 // ───────────────────────────────────────────────
 function ensurePlaid(res) {

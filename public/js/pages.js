@@ -102,6 +102,129 @@ const Pages = (() => {
   }
 
   // ===== MONTHLY DETAIL =====
+  // ── Plaid integration helpers (used by multiple pages) ──
+  function fmtMoney(n) { return '$' + (Math.round((n||0)*100)/100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  // Returns an inline card showing live cash on hand. Returns null if Plaid not connected.
+  async function buildCashSnapshotCard(compact = false) {
+    try {
+      const r = await fetch('/api/plaid/balances');
+      if (!r.ok) return null;
+      const d = await r.json();
+      if (!d.accounts || !d.accounts.length) return null;
+
+      const card = el('div', 'cash-snapshot-card');
+      const headline = `
+        <div class="css-headline">
+          <div class="css-cell">
+            <div class="css-num positive">${fmtMoney(d.cashOnHand)}</div>
+            <div class="css-label">💰 Cash on Hand</div>
+          </div>
+          ${d.creditOwed > 0 ? `
+            <div class="css-cell">
+              <div class="css-num negative">${fmtMoney(d.creditOwed)}</div>
+              <div class="css-label">💳 Credit Owed${d.creditLimit ? ` / ${fmtMoney(d.creditLimit)}` : ''}</div>
+            </div>` : ''}
+        </div>`;
+      const list = compact ? '' : `
+        <div class="css-account-list">
+          ${d.accounts.map(a => {
+            const bal = a.balance || {};
+            const main = a.type === 'credit' ? (bal.current || 0) : (bal.available != null ? bal.available : (bal.current || 0));
+            const sign = a.type === 'credit' ? 'negative' : (main >= 0 ? 'positive' : 'negative');
+            return `
+              <div class="css-row">
+                <div>
+                  <div class="css-name">${a.name} ····${a.mask || ''}</div>
+                  <div class="css-sub">${a.institutionName} · ${a.subtype || a.type}</div>
+                </div>
+                <div class="css-amt ${sign}">${fmtMoney(main)}</div>
+              </div>`;
+          }).join('')}
+        </div>`;
+      card.innerHTML = `
+        <div class="css-head-row">
+          <span class="css-title">Live Bank Balances</span>
+          <span class="css-time">just now</span>
+        </div>
+        ${headline}${list}`;
+      return card;
+    } catch { return null; }
+  }
+
+  // Returns an inline card listing recurring charges with matched/missing status. Null if none.
+  async function buildRecurringCard() {
+    try {
+      const r = await fetch('/api/plaid/recurring');
+      if (!r.ok) return null;
+      const d = await r.json();
+      const total = (d.matched?.length || 0) + (d.missing?.length || 0);
+      if (!total) return null;
+      const card = el('div', 'recurring-card');
+      const renderStream = (s, missing) => `
+        <div class="rec-stream ${missing ? 'missing' : 'matched'}">
+          <div class="rec-info">
+            <div class="rec-name">${s.merchantName}</div>
+            <div class="rec-meta">${(s.freq || '').toLowerCase().replace('_',' ')} · last ${s.lastDate || '—'} · ${s.account || s.institution}</div>
+          </div>
+          <div class="rec-amt ${missing ? 'warning' : ''}">${fmtMoney(s.amount)}</div>
+        </div>`;
+      card.innerHTML = `
+        <div class="css-head-row">
+          <span class="css-title">🔁 Recurring Charges (this month's pattern)</span>
+          <span class="css-time">${(d.matched?.length || 0)} matched · ${(d.missing?.length || 0)} missing</span>
+        </div>
+        ${(d.missing && d.missing.length) ? `
+          <div class="rec-section">
+            <div class="rec-section-h warning">⚠ Not in your budget</div>
+            ${d.missing.map(s => renderStream(s, true)).join('')}
+          </div>` : ''}
+        ${(d.matched && d.matched.length) ? `
+          <div class="rec-section">
+            <div class="rec-section-h success">✓ Matched to existing items</div>
+            ${d.matched.map(s => renderStream(s, false)).join('')}
+          </div>` : ''}`;
+      return card;
+    } catch { return null; }
+  }
+
+  // Project upcoming due-dates from Plaid recurring streams (for Bills Calendar)
+  async function getPlaidRecurringForMonth(year, monthName) {
+    try {
+      const r = await fetch('/api/plaid/recurring');
+      if (!r.ok) return [];
+      const d = await r.json();
+      const allStreams = [...(d.matched || []), ...(d.missing || [])];
+      const monthsArr = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+      const monthIdx = monthsArr.indexOf(monthName);
+      if (monthIdx < 0) return [];
+      const targetMonth = new Date(parseInt(year, 10), monthIdx, 1);
+      const out = [];
+      for (const s of allStreams) {
+        if (!s.lastDate) continue;
+        // Project next due-date(s) within target month
+        const last = new Date(s.lastDate + 'T00:00:00');
+        const freqMap = { WEEKLY: 7, BIWEEKLY: 14, SEMI_MONTHLY: 15, MONTHLY: 30, QUARTERLY: 90, ANNUALLY: 365 };
+        const stepDays = freqMap[(s.freq || '').toUpperCase()] || 30;
+        // walk forward in time until we land in or past the target month
+        let t = new Date(last);
+        for (let i = 0; i < 26 && t < targetMonth; i++) t.setDate(t.getDate() + stepDays);
+        if (t.getFullYear() === targetMonth.getFullYear() && t.getMonth() === targetMonth.getMonth()) {
+          out.push({
+            day: t.getDate(),
+            name: s.merchantName,
+            account: s.account || s.institution,
+            amount: s.amount,
+            paid: false,
+            isPlaid: true,
+            isMissing: !!s.matchedTo === false  // i.e. it was in `missing`
+          });
+        }
+      }
+      return out;
+    } catch { return []; }
+  }
+
   function monthly(year, month) {
     const monthData = DB.getMonth(year, month);
     const s = monthData?.summary || {};
@@ -117,6 +240,9 @@ const Pages = (() => {
     const net = s.netCashFlow || 0;
 
     const div = el('div');
+
+    // Async insertion: Cash Snapshot card at very top
+    buildCashSnapshotCard(true).then(card => { if (card) div.insertBefore(card, div.firstChild); });
 
     // Summary bar
     const sumCard = el('div', 'summary-card');
@@ -138,12 +264,21 @@ const Pages = (() => {
 
     div.appendChild(sumCard);
 
+    // Export action bar
+    const actionBar = el('div', 'export-bar');
+    actionBar.innerHTML = `
+      <a class="btn btn-ghost btn-sm" href="/api/export/month/${year}/${month}.csv" download>📥 Export ${month} ${year} (CSV)</a>`;
+    div.appendChild(actionBar);
+
     // Sections
     div.appendChild(renderSection('income', 'Income', monthData, year, month));
     div.appendChild(renderSection('fixedExpenses', 'Fixed Expenses', monthData, year, month));
     div.appendChild(renderSection('variableExpenses', 'Variable Expenses', monthData, year, month));
     div.appendChild(renderSection('debt', 'Debt Repayment', monthData, year, month));
     div.appendChild(renderSection('savings', 'Savings Plan', monthData, year, month));
+
+    // Async insertion: Recurring Charges card at the bottom of the page
+    buildRecurringCard().then(card => { if (card) div.appendChild(card); });
 
     return div;
   }
@@ -372,6 +507,16 @@ const Pages = (() => {
 
     const div = el('div');
 
+    // Async: Cash Snapshot card at very top
+    buildCashSnapshotCard(false).then(card => { if (card) div.insertBefore(card, div.firstChild); });
+
+    // Export action bar — full year + tax-focused
+    const actionBar = el('div', 'export-bar');
+    actionBar.innerHTML = `
+      <a class="btn btn-ghost btn-sm" href="/api/export/year/${year}.csv" download>📥 Export Full ${year} (CSV)</a>
+      <a class="btn btn-primary btn-sm" href="/api/export/tax/${year}.csv" download>📑 ${year} Tax Report (CSV)</a>`;
+    div.appendChild(actionBar);
+
     if (totals) {
       const card = el('div', 'stats-grid mb-24');
       const tIncome = totals.income?.actual || 0;
@@ -543,48 +688,79 @@ const Pages = (() => {
   // ===== BILLS CALENDAR =====
   function bills(year, month) {
     const monthData = DB.getMonth(year, month);
-    const billList = getBillsForMonth(monthData);
+    let billList = getBillsForMonth(monthData);
     const today = new Date().getDate();
 
     const div = el('div');
 
-    if (!billList.length) {
-      div.innerHTML = `<div class="empty-state"><div class="empty-icon">🗓</div><div class="empty-title">No bills for ${month}</div><div class="empty-desc">Add fixed expenses in Monthly Detail.</div></div>`;
-      return div;
+    function renderBills(list) {
+      div.innerHTML = '';
+      if (!list.length) {
+        div.innerHTML = `<div class="empty-state"><div class="empty-icon">🗓</div><div class="empty-title">No bills for ${month}</div><div class="empty-desc">Add fixed expenses in Monthly Detail or connect a bank to auto-detect recurring charges.</div></div>`;
+        return;
+      }
+
+      // Sort by day ascending (push items with day===99 / unknown to end)
+      list.sort((a, b) => a.day - b.day);
+
+      const totalDue = list.reduce((s, b) => s + b.amount, 0);
+      const paid = list.filter(b => b.paid).length;
+      const fromPlaid = list.filter(b => b.isPlaid).length;
+
+      const statsBar = el('div', 'stats-grid mb-24');
+      statsBar.style.gridTemplateColumns = 'repeat(4,1fr)';
+      statsBar.innerHTML = `
+        <div class="stat-card fixed"><div class="stat-label">Total Bills</div><div class="stat-value">${list.length}</div></div>
+        <div class="stat-card"><div class="stat-label">Paid</div><div class="stat-value positive">${paid}</div></div>
+        <div class="stat-card expenses"><div class="stat-label">Total Amount</div><div class="stat-value negative">${fmt(totalDue)}</div></div>
+        <div class="stat-card"><div class="stat-label">From Bank</div><div class="stat-value" style="color:var(--gold)">${fromPlaid}</div></div>`;
+      div.appendChild(statsBar);
+
+      const ul = el('div', 'bills-list');
+      list.forEach(b => {
+        const isToday = b.day === today;
+        const isOverdue = b.day < today && !b.paid;
+        const status = b.paid ? 'paid' : isOverdue ? 'overdue' : 'upcoming';
+        const item = el('div', 'bill-item');
+        if (isToday) item.style.border = '1px solid var(--gold)';
+        if (b.isMissing) item.style.borderLeft = '3px solid var(--warning)';
+        const tag = b.isPlaid
+          ? `<span class="bill-source ${b.isMissing ? 'missing' : ''}" title="${b.isMissing ? 'Detected by your bank but not in your budget' : 'Detected by your bank'}">${b.isMissing ? '⚠ bank-only' : '🏦 bank'}</span>`
+          : '';
+        item.innerHTML = `
+          <div class="bill-day" style="background:${isToday ? 'var(--gold)' : ''}; color:${isToday ? '#1a0f00' : ''}">
+            <span class="bill-day-num" style="color:${isToday ? '#1a0f00' : ''}">${b.day < 99 ? b.day : '?'}</span>
+            <span class="bill-day-label" style="color:${isToday ? '#1a0f00' : ''}">Due</span>
+          </div>
+          <div class="bill-info">
+            <div class="bill-name">${b.name} ${tag}</div>
+            <div class="bill-account">${b.account || ''}</div>
+          </div>
+          <span class="bill-amount">${fmt(b.amount)}</span>
+          <span class="bill-status ${status}">${status === 'paid' ? '✓ Paid' : status === 'overdue' ? '⚠ Overdue' : '⏳ Upcoming'}</span>`;
+        ul.appendChild(item);
+      });
+
+      div.appendChild(ul);
     }
 
-    const totalDue = billList.reduce((s, b) => s + b.amount, 0);
-    const paid = billList.filter(b => b.paid).length;
+    renderBills(billList);
 
-    const statsBar = el('div', 'stats-grid mb-24');
-    statsBar.style.gridTemplateColumns = 'repeat(3,1fr)';
-    statsBar.innerHTML = `
-      <div class="stat-card fixed"><div class="stat-label">Total Bills</div><div class="stat-value">${billList.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Paid</div><div class="stat-value positive">${paid}</div></div>
-      <div class="stat-card expenses"><div class="stat-label">Total Amount</div><div class="stat-value negative">${fmt(totalDue)}</div></div>`;
-    statsBar.querySelectorAll('.stat-card')[0].style.setProperty('--card-accent','var(--primary)');
-    statsBar.querySelectorAll('.stat-card')[1].style.setProperty('--card-accent','var(--success)');
-    div.appendChild(statsBar);
-
-    const list = el('div', 'bills-list');
-    billList.forEach(b => {
-      const isToday = b.day === today;
-      const isOverdue = b.day < today && !b.paid;
-      const status = b.paid ? 'paid' : isOverdue ? 'overdue' : 'upcoming';
-      const item = el('div', 'bill-item');
-      if (isToday) item.style.border = '1px solid var(--gold)';
-      item.innerHTML = `
-        <div class="bill-day" style="background:${isToday ? 'var(--gold)' : ''}; color:${isToday ? '#1a0f00' : ''}">
-          <span class="bill-day-num" style="color:${isToday ? '#1a0f00' : ''}">${b.day < 99 ? b.day : '?'}</span>
-          <span class="bill-day-label" style="color:${isToday ? '#1a0f00' : ''}">Due</span>
-        </div>
-        <div class="bill-info"><div class="bill-name">${b.name}</div><div class="bill-account">${b.account}</div></div>
-        <span class="bill-amount">${fmt(b.amount)}</span>
-        <span class="bill-status ${status}">${status === 'paid' ? '✓ Paid' : status === 'overdue' ? '⚠ Overdue' : '⏳ Upcoming'}</span>`;
-      list.appendChild(item);
+    // Async: merge in Plaid recurring (de-duped against budgeted bills by name+amount)
+    getPlaidRecurringForMonth(year, month).then(plaidBills => {
+      if (!plaidBills.length) return;
+      const merged = [...billList];
+      for (const pb of plaidBills) {
+        const dup = merged.find(b =>
+          (b.name || '').toLowerCase().includes((pb.name || '').toLowerCase().split(' ')[0]) ||
+          ((pb.name || '').toLowerCase()).includes((b.name || '').toLowerCase().split(' ')[0])
+        );
+        if (!dup) merged.push(pb);
+        else { dup.isPlaid = true; if (!dup.day || dup.day === 99) dup.day = pb.day; }
+      }
+      renderBills(merged);
     });
 
-    div.appendChild(list);
     return div;
   }
 
