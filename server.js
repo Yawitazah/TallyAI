@@ -578,7 +578,7 @@ app.post('/api/plaid/exchange', requireAuth, async (req, res) => {
     }));
 
     // Persist on data.json
-    const data = readData() || { settings: {}, data: {} };
+    const data = readUserData(req.session.userId) || { settings: {}, data: {} };
     if (!data.settings) data.settings = {};
     if (!data.settings.plaidItems) data.settings.plaidItems = [];
     data.settings.plaidItems.push({
@@ -592,7 +592,7 @@ app.post('/api/plaid/exchange', requireAuth, async (req, res) => {
       cursor:          null,
       accounts
     });
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    saveUserData(req.session.userId, data);
 
     res.json({ success: true, item_id, accounts });
   } catch (e) {
@@ -603,7 +603,7 @@ app.post('/api/plaid/exchange', requireAuth, async (req, res) => {
 
 // List linked banks (without exposing access tokens)
 app.get('/api/plaid/items', requireAuth, (req, res) => {
-  const data = readData();
+  const data = readUserData(req.session.userId);
   const items = (data?.settings?.plaidItems || []).map(it => ({
     id: it.id, institutionName: it.institutionName, linkedBy: it.linkedBy,
     linkedAt: it.linkedAt, lastSync: it.lastSync, accounts: it.accounts
@@ -615,14 +615,14 @@ app.get('/api/plaid/items', requireAuth, (req, res) => {
 app.delete('/api/plaid/item/:id', requireAuth, async (req, res) => {
   if (!ensurePlaid(res)) return;
   try {
-    const data = readData();
+    const data = readUserData(req.session.userId);
     if (!data?.settings?.plaidItems) return res.json({ success: true });
     const it = data.settings.plaidItems.find(x => x.id === req.params.id);
     if (it?.accessToken) {
       try { await plaidClient.itemRemove({ access_token: it.accessToken }); } catch(_) {}
     }
     data.settings.plaidItems = data.settings.plaidItems.filter(x => x.id !== req.params.id);
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    saveUserData(req.session.userId, data);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -631,14 +631,14 @@ app.delete('/api/plaid/item/:id', requireAuth, async (req, res) => {
 
 // Update which app-account a Plaid account maps to
 app.post('/api/plaid/item/:id/account-map', requireAuth, (req, res) => {
-  const data = readData();
+  const data = readUserData(req.session.userId);
   const it = data?.settings?.plaidItems?.find(x => x.id === req.params.id);
   if (!it) return res.status(404).json({ error: 'Item not found' });
   const { accountId, appAccount } = req.body;
   const acc = it.accounts.find(a => a.id === accountId);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   acc.appAccount = appAccount || '';
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  saveUserData(req.session.userId, data);
   res.json({ success: true });
 });
 
@@ -646,7 +646,7 @@ app.post('/api/plaid/item/:id/account-map', requireAuth, (req, res) => {
 app.post('/api/plaid/sync', requireAuth, async (req, res) => {
   if (!ensurePlaid(res)) return;
   try {
-    const data = readData();
+    const data = readUserData(req.session.userId);
     if (!data?.settings?.plaidItems?.length) return res.json({ added: 0, items: [] });
 
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -766,7 +766,7 @@ app.post('/api/plaid/sync', requireAuth, async (req, res) => {
       results.push({ id: item.id, institutionName: item.institutionName, added, modified, removed });
     }
 
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    saveUserData(req.session.userId, data);
     res.json({ added: totalAdded, items: results });
   } catch (e) {
     console.error('Plaid sync error:', e?.response?.data || e.message);
