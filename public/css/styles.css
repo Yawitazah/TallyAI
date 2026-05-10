@@ -844,10 +844,22 @@ body {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 12px 20px;
   font-size: 0.875rem; font-weight: 500;
-  box-shadow: var(--shadow); transform: translateY(80px);
-  transition: transform 0.3s ease; max-width: 320px;
+  box-shadow: var(--shadow);
+  max-width: 320px;
+  /* Hidden by default — only visible when .show is added */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(20px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
 }
-.toast.show { transform: translateY(0); }
+.toast.show {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s;
+}
 .toast.success { border-color: var(--success); color: var(--success); }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 
