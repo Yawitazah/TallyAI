@@ -434,6 +434,17 @@ function ensurePlaid(res) {
   return true;
 }
 
+// Public status check — no auth required, no secrets exposed
+app.get('/api/plaid/status', (req, res) => {
+  res.json({
+    configured: !!plaidClient,
+    env: PLAID_ENV,
+    hasClientId: !!process.env.PLAID_CLIENT_ID,
+    hasSandboxSecret: !!process.env.PLAID_SANDBOX_SECRET,
+    hasProductionSecret: !!process.env.PLAID_PRODUCTION_SECRET
+  });
+});
+
 // Plaid → app-category mapping (uses Plaid's Personal Finance Category taxonomy)
 // Returns { type: 'income'|'fixedExpenses'|'variableExpenses'|'debt'|'savings', categoryHint: '...' }
 function mapPlaidCategory(personal_finance_category) {
