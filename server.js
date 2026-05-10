@@ -1,3 +1,6 @@
+// Load .env if present (no error if missing — Railway sets vars directly)
+try { require('dotenv').config(); } catch (_) {}
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -5,6 +8,7 @@ const https = require('https');
 const crypto = require('crypto');
 const session = require('express-session');
 const { exec } = require('child_process');
+const { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } = require('plaid');
 
 const app = express();
 const PORT = process.env.PORT || 3141;
@@ -30,6 +34,28 @@ function writeJson(file, data) {
 function userDataFile(userId) {
   return path.join(DATA_DIR, `user-${userId}.json`);
 }
+
+// ── Plaid client ──
+const PLAID_ENV = process.env.PLAID_ENV || 'sandbox';
+const PLAID_SECRET = PLAID_ENV === 'production'
+  ? process.env.PLAID_PRODUCTION_SECRET
+  : process.env.PLAID_SANDBOX_SECRET;
+
+const plaidClient = (process.env.PLAID_CLIENT_ID && PLAID_SECRET)
+  ? new PlaidApi(new Configuration({
+      basePath: PlaidEnvironments[PLAID_ENV],
+      baseOptions: {
+        headers: {
+          'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': PLAID_SECRET,
+          'Plaid-Version': '2020-09-14'
+        }
+      }
+    }))
+  : null;
+
+if (plaidClient) console.log(`✓ Plaid configured (${PLAID_ENV})`);
+else console.log('⚠ Plaid not configured — set PLAID_CLIENT_ID and PLAID_SANDBOX_SECRET in .env');
 
 app.use(express.json({ limit: '50mb' }));
 app.use(session({
@@ -397,6 +423,354 @@ Give concise, actionable advice using specific dollar amounts from their data. B
     apiReq.on('error', e => res.status(500).json({ error: 'Network error reaching Anthropic: ' + e.message }));
     apiReq.write(payload);
     apiReq.end();
+  }
+});
+
+// ───────────────────────────────────────────────
+// PLAID INTEGRATION
+// ───────────────────────────────────────────────
+function ensurePlaid(res) {
+  if (!plaidClient) { res.status(503).json({ error: 'Plaid is not configured on the server.' }); return false; }
+  return true;
+}
+
+// Plaid → app-category mapping (uses Plaid's Personal Finance Category taxonomy)
+// Returns { type: 'income'|'fixedExpenses'|'variableExpenses'|'debt'|'savings', categoryHint: '...' }
+function mapPlaidCategory(personal_finance_category) {
+  const detailed = personal_finance_category?.detailed || '';
+  const primary  = personal_finance_category?.primary || '';
+
+  // INCOME
+  if (primary === 'INCOME') return { type: 'income', categoryHint: '' };
+
+  // DEBT PAYMENTS
+  if (primary === 'LOAN_PAYMENTS') return { type: 'debt', categoryHint: '' };
+  if (detailed === 'TRANSFER_OUT_SAVINGS') return { type: 'savings', categoryHint: '' };
+
+  // FIXED EXPENSES (recurring bills)
+  const fixedMap = {
+    'RENT_AND_UTILITIES_RENT': 'Rent',
+    'RENT_AND_UTILITIES_INTERNET_AND_CABLE': 'Wifi',
+    'RENT_AND_UTILITIES_GAS_AND_ELECTRICITY': 'Utilities',
+    'RENT_AND_UTILITIES_WATER': 'Utilities',
+    'RENT_AND_UTILITIES_TELEPHONE': 'Wifi',
+    'RENT_AND_UTILITIES_OTHER_UTILITIES': 'Utilities',
+    'GENERAL_SERVICES_INSURANCE': 'Car insurance',
+    'GENERAL_SERVICES_AUTOMOTIVE': 'Car insurance',
+    'GENERAL_SERVICES_STORAGE': 'Storage'
+  };
+  if (fixedMap[detailed]) return { type: 'fixedExpenses', categoryHint: fixedMap[detailed] };
+
+  // VARIABLE EXPENSES
+  const varMap = {
+    'FOOD_AND_DRINK_GROCERIES':                   'Groceries',
+    'FOOD_AND_DRINK_RESTAURANTS':                 'Eating Out',
+    'FOOD_AND_DRINK_FAST_FOOD':                   'Eating Out',
+    'FOOD_AND_DRINK_COFFEE':                      'Eating Out',
+    'FOOD_AND_DRINK_BEER_WINE_AND_LIQUOR':        'Eating Out',
+    'FOOD_AND_DRINK_VENDING_MACHINES':            'Eating Out',
+    'FOOD_AND_DRINK_OTHER_FOOD_AND_DRINK':        'Eating Out',
+    'TRANSPORTATION_GAS':                         'Gas',
+    'TRANSPORTATION_PARKING':                     'Auto / Car Maintenance',
+    'TRANSPORTATION_TOLLS':                       'Auto / Car Maintenance',
+    'TRANSPORTATION_PUBLIC_TRANSIT':              'Gas',
+    'TRANSPORTATION_TAXIS_AND_RIDE_SHARES':       'Entertainment / Date',
+    'GENERAL_SERVICES_AUTOMOTIVE':                'Auto / Car Maintenance',
+    'ENTERTAINMENT_TV_AND_MOVIES':                'Entertainment / Date',
+    'ENTERTAINMENT_MUSIC_AND_AUDIO':              'Entertainment / Date',
+    'ENTERTAINMENT_VIDEO_GAMES':                  'Entertainment / Date',
+    'ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS_AND_MUSEUMS': 'Entertainment / Date',
+    'ENTERTAINMENT_CASINOS_AND_GAMBLING':         'Entertainment / Date',
+    'ENTERTAINMENT_OTHER_ENTERTAINMENT':          'Entertainment / Date',
+    'GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES': 'Clothes Shopping',
+    'GENERAL_MERCHANDISE_DEPARTMENT_STORES':      'Household Shopping',
+    'GENERAL_MERCHANDISE_DISCOUNT_STORES':        'Household Shopping',
+    'GENERAL_MERCHANDISE_SUPERSTORES':            'Household Shopping',
+    'GENERAL_MERCHANDISE_ONLINE_MARKETPLACES':    'Household Shopping',
+    'GENERAL_MERCHANDISE_BOOKSTORES_AND_NEWSSTANDS': 'Household Shopping',
+    'GENERAL_MERCHANDISE_CONVENIENCE_STORES':     'Household Shopping',
+    'GENERAL_MERCHANDISE_ELECTRONICS':            'Household Shopping',
+    'GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES':    'Gifts',
+    'GENERAL_MERCHANDISE_OFFICE_SUPPLIES':        'Misc Business Expenses',
+    'GENERAL_MERCHANDISE_PET_SUPPLIES':           'Household Shopping',
+    'GENERAL_MERCHANDISE_SPORTING_GOODS':         'Household Shopping',
+    'GENERAL_MERCHANDISE_TOBACCO_AND_VAPE':       'Personal Care',
+    'GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE': 'Household Shopping',
+    'HOME_IMPROVEMENT_FURNITURE':                 'Household Shopping',
+    'HOME_IMPROVEMENT_HARDWARE':                  'Household Shopping',
+    'HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE':    'Household Shopping',
+    'HOME_IMPROVEMENT_SECURITY':                  'Household Shopping',
+    'HOME_IMPROVEMENT_OTHER_HOME_IMPROVEMENT':    'Household Shopping',
+    'MEDICAL_DENTAL_CARE':                        'Medical / Health',
+    'MEDICAL_EYE_CARE':                           'Medical / Health',
+    'MEDICAL_NURSING_CARE':                       'Medical / Health',
+    'MEDICAL_PHARMACIES_AND_SUPPLEMENTS':         'Medical / Health',
+    'MEDICAL_PRIMARY_CARE':                       'Medical / Health',
+    'MEDICAL_VETERINARY_SERVICES':                'Medical / Health',
+    'MEDICAL_OTHER_MEDICAL':                      'Medical / Health',
+    'PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS':     'Personal Care',
+    'PERSONAL_CARE_HAIR_AND_BEAUTY':              'Personal Care',
+    'PERSONAL_CARE_LAUNDRY_AND_DRY_CLEANING':     'Personal Care',
+    'PERSONAL_CARE_OTHER_PERSONAL_CARE':          'Personal Care',
+    'GENERAL_SERVICES_CHILDCARE':                 'School / Extra-Curricular',
+    'GENERAL_SERVICES_CONSULTING_AND_LEGAL':      'Misc Business Expenses',
+    'GENERAL_SERVICES_EDUCATION':                 'School / Extra-Curricular',
+    'TRAVEL_FLIGHTS':                             'Travel',
+    'TRAVEL_LODGING':                             'Travel',
+    'TRAVEL_RENTAL_CARS':                         'Travel',
+    'TRAVEL_OTHER_TRAVEL':                        'Travel',
+    'GOVERNMENT_AND_NON_PROFIT_DONATIONS':        'Charity',
+    'GOVERNMENT_AND_NON_PROFIT_OTHER_GOVERNMENT_AND_NON_PROFIT': 'Charity'
+  };
+  if (varMap[detailed]) return { type: 'variableExpenses', categoryHint: varMap[detailed] };
+
+  // Fallback by primary category
+  const primaryFallback = {
+    'FOOD_AND_DRINK': 'Eating Out',
+    'TRANSPORTATION': 'Gas',
+    'GENERAL_MERCHANDISE': 'Household Shopping',
+    'ENTERTAINMENT': 'Entertainment / Date',
+    'PERSONAL_CARE': 'Personal Care',
+    'MEDICAL': 'Medical / Health',
+    'TRAVEL': 'Travel'
+  };
+  if (primaryFallback[primary]) return { type: 'variableExpenses', categoryHint: primaryFallback[primary] };
+
+  return { type: 'variableExpenses', categoryHint: '' };
+}
+
+// Create a Plaid Link token (to be used by the front-end Plaid Link UI)
+app.post('/api/plaid/link-token', requireAuth, async (req, res) => {
+  if (!ensurePlaid(res)) return;
+  try {
+    const r = await plaidClient.linkTokenCreate({
+      user: { client_user_id: req.session.userId || 'tally-user' },
+      client_name: 'Tally AI',
+      products: [Products.Transactions],
+      country_codes: [CountryCode.Us],
+      language: 'en'
+    });
+    res.json({ link_token: r.data.link_token });
+  } catch (e) {
+    console.error('Plaid link-token error:', e?.response?.data || e.message);
+    res.status(500).json({ error: e?.response?.data?.error_message || e.message });
+  }
+});
+
+// Exchange the public_token from Plaid Link for a long-lived access_token, and store it
+app.post('/api/plaid/exchange', requireAuth, async (req, res) => {
+  if (!ensurePlaid(res)) return;
+  try {
+    const { public_token, metadata } = req.body;
+    const r = await plaidClient.itemPublicTokenExchange({ public_token });
+    const access_token = r.data.access_token;
+    const item_id      = r.data.item_id;
+
+    // Get account info for this item
+    const acc = await plaidClient.accountsGet({ access_token });
+    const accounts = (acc.data.accounts || []).map(a => ({
+      id:       a.account_id,
+      name:     a.name,
+      mask:     a.mask,
+      type:     a.type,
+      subtype:  a.subtype,
+      appAccount: ''
+    }));
+
+    // Persist on data.json
+    const data = readData() || { settings: {}, data: {} };
+    if (!data.settings) data.settings = {};
+    if (!data.settings.plaidItems) data.settings.plaidItems = [];
+    data.settings.plaidItems.push({
+      id: item_id,
+      accessToken: access_token,
+      institutionName: metadata?.institution?.name || 'Bank',
+      institutionId:   metadata?.institution?.institution_id || '',
+      linkedBy:        req.session.userId,
+      linkedAt:        new Date().toISOString(),
+      lastSync:        null,
+      cursor:          null,
+      accounts
+    });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
+    res.json({ success: true, item_id, accounts });
+  } catch (e) {
+    console.error('Plaid exchange error:', e?.response?.data || e.message);
+    res.status(500).json({ error: e?.response?.data?.error_message || e.message });
+  }
+});
+
+// List linked banks (without exposing access tokens)
+app.get('/api/plaid/items', requireAuth, (req, res) => {
+  const data = readData();
+  const items = (data?.settings?.plaidItems || []).map(it => ({
+    id: it.id, institutionName: it.institutionName, linkedBy: it.linkedBy,
+    linkedAt: it.linkedAt, lastSync: it.lastSync, accounts: it.accounts
+  }));
+  res.json({ items });
+});
+
+// Remove a linked bank
+app.delete('/api/plaid/item/:id', requireAuth, async (req, res) => {
+  if (!ensurePlaid(res)) return;
+  try {
+    const data = readData();
+    if (!data?.settings?.plaidItems) return res.json({ success: true });
+    const it = data.settings.plaidItems.find(x => x.id === req.params.id);
+    if (it?.accessToken) {
+      try { await plaidClient.itemRemove({ access_token: it.accessToken }); } catch(_) {}
+    }
+    data.settings.plaidItems = data.settings.plaidItems.filter(x => x.id !== req.params.id);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Update which app-account a Plaid account maps to
+app.post('/api/plaid/item/:id/account-map', requireAuth, (req, res) => {
+  const data = readData();
+  const it = data?.settings?.plaidItems?.find(x => x.id === req.params.id);
+  if (!it) return res.status(404).json({ error: 'Item not found' });
+  const { accountId, appAccount } = req.body;
+  const acc = it.accounts.find(a => a.id === accountId);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  acc.appAccount = appAccount || '';
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  res.json({ success: true });
+});
+
+// Sync transactions from all linked items into entries[]
+app.post('/api/plaid/sync', requireAuth, async (req, res) => {
+  if (!ensurePlaid(res)) return;
+  try {
+    const data = readData();
+    if (!data?.settings?.plaidItems?.length) return res.json({ added: 0, items: [] });
+
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    let totalAdded = 0;
+    const results = [];
+
+    for (const item of data.settings.plaidItems) {
+      let cursor = item.cursor || null;
+      let added = 0, modified = 0, removed = 0;
+      const allTxns = [];
+
+      // Walk Plaid /transactions/sync until has_more is false
+      let hasMore = true;
+      while (hasMore) {
+        const r = await plaidClient.transactionsSync({
+          access_token: item.accessToken,
+          cursor: cursor || undefined
+        });
+        allTxns.push(...r.data.added);
+        added    += r.data.added.length;
+        modified += r.data.modified.length;
+        removed  += r.data.removed.length;
+        cursor    = r.data.next_cursor;
+        hasMore   = r.data.has_more;
+      }
+
+      // Build entries by year/month/section/category
+      for (const tx of allTxns) {
+        if (tx.pending) continue;
+        const dateStr = tx.date; // YYYY-MM-DD
+        const d = new Date(dateStr + 'T00:00:00');
+        const year = String(d.getFullYear());
+        const monthName = months[d.getMonth()];
+
+        // Plaid amounts are positive for outflow (debit), negative for inflow (credit)
+        // We store positive values in entries; income vs expense is determined by the section.
+        const amount = Math.abs(tx.amount);
+        if (!amount) continue;
+
+        const map = mapPlaidCategory(tx.personal_finance_category);
+        const isIncome = map.type === 'income';
+
+        // Income only when Plaid reports a credit/inflow (negative amount); skip refunds otherwise.
+        if (isIncome && tx.amount > 0) continue;
+        if (!isIncome && tx.amount < 0) continue;
+
+        // Find this Plaid account's appAccount mapping
+        const plaidAcc = item.accounts.find(a => a.id === tx.account_id);
+        const appAccount = plaidAcc?.appAccount || item.institutionName;
+
+        // Ensure year/month exist in data
+        if (!data.data[year]) data.data[year] = { annualTotals: null, months: {} };
+        if (!data.data[year].months[monthName]) {
+          data.data[year].months[monthName] = {
+            income: [], fixedExpenses: [], variableExpenses: [], debt: [], savings: [],
+            summary: { startingBalance: 0, totalIncome: 0, totalExpenses: 0, debtPayments: 0, savingsContributions: 0, netCashFlow: 0, endingBalance: 0 }
+          };
+        }
+        const monthData = data.data[year].months[monthName];
+
+        // Find or create the right line item by category hint
+        const sectionArr = monthData[map.type];
+        const labelKey = map.type === 'income' ? 'source' : (map.type === 'savings' ? 'goal' : 'category');
+        let lineItem = null;
+
+        if (map.categoryHint) {
+          lineItem = sectionArr.find(x => (x[labelKey] || '').toLowerCase() === map.categoryHint.toLowerCase());
+        }
+        if (!lineItem) {
+          // Create a "needs review" bucket if no mapping
+          const fallbackName = map.categoryHint || 'Plaid — Needs Review';
+          lineItem = sectionArr.find(x => x[labelKey] === fallbackName);
+          if (!lineItem) {
+            lineItem = { [labelKey]: fallbackName, account: appAccount, entries: [] };
+            if (map.type === 'fixedExpenses' || map.type === 'variableExpenses') {
+              lineItem.budget = 0; lineItem.actual = 0;
+            } else if (map.type === 'debt') {
+              lineItem.balance = 0; lineItem.payment = 0;
+            } else if (map.type === 'savings') {
+              lineItem.target = 0; lineItem.contribution = 0; lineItem.currentBalance = 0;
+            } else {
+              lineItem.expected = 0; lineItem.actual = 0;
+            }
+            sectionArr.push(lineItem);
+          }
+        }
+        if (!lineItem.entries) lineItem.entries = [];
+
+        // De-dupe: skip if an entry with the same plaidId or (date+amount+desc) already exists
+        const desc = (tx.merchant_name || tx.name || 'Transaction').slice(0, 60);
+        const dup = lineItem.entries.find(e =>
+          (e.plaidId && e.plaidId === tx.transaction_id) ||
+          (e.date === dateStr && Math.abs((e.amount||0) - amount) < 0.005 && (e.desc||'').toLowerCase() === desc.toLowerCase())
+        );
+        if (dup) {
+          if (!dup.plaidId) dup.plaidId = tx.transaction_id;
+          continue;
+        }
+
+        lineItem.entries.push({
+          desc,
+          amount: Math.round(amount * 100) / 100,
+          date: dateStr,
+          account: appAccount,
+          plaidId: tx.transaction_id
+        });
+
+        // Recompute the line item total from entries
+        const amtField = map.type === 'income' ? 'actual' : map.type === 'debt' ? 'payment' : map.type === 'savings' ? 'contribution' : 'actual';
+        lineItem[amtField] = Math.round(lineItem.entries.reduce((s, e) => s + (e.amount || 0), 0) * 100) / 100;
+
+        totalAdded++;
+      }
+
+      item.cursor = cursor;
+      item.lastSync = new Date().toISOString();
+      results.push({ id: item.id, institutionName: item.institutionName, added, modified, removed });
+    }
+
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    res.json({ added: totalAdded, items: results });
+  } catch (e) {
+    console.error('Plaid sync error:', e?.response?.data || e.message);
+    res.status(500).json({ error: e?.response?.data?.error_message || e.message });
   }
 });
 

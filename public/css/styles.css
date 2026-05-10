@@ -838,6 +838,34 @@ body {
 .empty-title { font-size: 1rem; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
 .empty-desc { font-size: 0.85rem; }
 
+/* ===== PLAID ===== */
+.plaid-items-list { display: flex; flex-direction: column; gap: 10px; }
+.plaid-item {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 14px 16px;
+}
+.plaid-item-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.plaid-item-name { font-weight: 700; font-size: 0.95rem; }
+.plaid-item-meta { font-size: 0.75rem; color: var(--text3); margin-top: 2px; }
+.plaid-remove {
+  width: 32px; height: 32px; padding: 0 !important;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.95rem; border-radius: 8px; flex-shrink: 0;
+}
+.plaid-accounts {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border);
+}
+.plaid-account {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.plaid-account-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.plaid-account-name { font-weight: 600; font-size: 0.85rem; }
+.plaid-account-type { font-size: 0.7rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
+.plaid-account-map { min-width: 180px; max-width: 100%; }
+
 /* ===== TOAST ===== */
 .toast {
   position: fixed; bottom: 24px; right: 24px; z-index: 999;

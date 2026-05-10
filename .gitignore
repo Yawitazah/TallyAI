@@ -6,3 +6,6 @@ data-*/
 server.test.*.log
 .claude/
 *.bat
+.env
+.env.local
+.env.*.local

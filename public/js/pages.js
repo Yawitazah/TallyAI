@@ -1093,6 +1093,20 @@ const Pages = (() => {
       </div>
 
       <div class="settings-section">
+        <div class="settings-title">Connected Banks (Plaid)</div>
+        <div class="settings-desc" style="margin-bottom:12px">
+          Link your bank accounts to auto-import transactions as itemized entries.
+          Plaid handles authentication securely — Tally never sees your bank password.
+        </div>
+        <div id="plaid-items-list" class="plaid-items-list"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="plaid-connect-btn">🏦 Connect a Bank</button>
+          <button class="btn btn-ghost" id="plaid-sync-btn">↻ Sync Transactions</button>
+        </div>
+        <div id="plaid-sync-status" style="margin-top:10px;font-size:0.85rem;color:var(--text3)"></div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-title">AI Advisor</div>
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px">
           <div><div class="settings-key">AI Provider</div><div class="settings-desc">Choose which AI powers your financial advisor — both work great, ChatGPT costs less per message</div></div>
@@ -1239,6 +1253,127 @@ const Pages = (() => {
           }
         }
         showToast('Settings saved!');
+      };
+
+      // ── Plaid integration ──
+      const plaidListEl   = document.getElementById('plaid-items-list');
+      const plaidSyncEl   = document.getElementById('plaid-sync-status');
+      const plaidConnect  = document.getElementById('plaid-connect-btn');
+      const plaidSync     = document.getElementById('plaid-sync-btn');
+
+      async function refreshPlaidItems() {
+        try {
+          const res = await fetch('/api/plaid/items');
+          const { items } = await res.json();
+          if (!items || items.length === 0) {
+            plaidListEl.innerHTML = '<div style="color:var(--text3);font-size:0.85rem;padding:8px 0">No banks connected yet.</div>';
+            return;
+          }
+          const accountOptions = (DB.getSettings().accounts || []).map(a => `<option value="${a}">${a}</option>`).join('');
+          plaidListEl.innerHTML = items.map(it => `
+            <div class="plaid-item">
+              <div class="plaid-item-head">
+                <div>
+                  <div class="plaid-item-name">${it.institutionName}</div>
+                  <div class="plaid-item-meta">${it.accounts?.length || 0} accounts · last sync: ${it.lastSync ? new Date(it.lastSync).toLocaleString() : 'never'}</div>
+                </div>
+                <button class="btn btn-ghost plaid-remove" data-id="${it.id}" title="Disconnect">✕</button>
+              </div>
+              <div class="plaid-accounts">
+                ${(it.accounts || []).map(a => `
+                  <div class="plaid-account">
+                    <div class="plaid-account-info">
+                      <span class="plaid-account-name">${a.name} ····${a.mask || ''}</span>
+                      <span class="plaid-account-type">${a.subtype || a.type}</span>
+                    </div>
+                    <select class="form-select plaid-account-map" data-item="${it.id}" data-account="${a.id}">
+                      <option value="">Map to account…</option>
+                      ${accountOptions.replace(/value="([^"]+)"/g, (m, v) => v === a.appAccount ? `value="${v}" selected` : m)}
+                    </select>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('');
+
+          plaidListEl.querySelectorAll('.plaid-remove').forEach(b => {
+            b.onclick = async () => {
+              if (!confirm(`Disconnect ${b.closest('.plaid-item').querySelector('.plaid-item-name').textContent}? This won't delete entries already synced.`)) return;
+              await fetch('/api/plaid/item/' + b.dataset.id, { method: 'DELETE' });
+              showToast('Bank disconnected.');
+              refreshPlaidItems();
+            };
+          });
+
+          plaidListEl.querySelectorAll('.plaid-account-map').forEach(sel => {
+            sel.onchange = async () => {
+              await fetch('/api/plaid/item/' + sel.dataset.item + '/account-map', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accountId: sel.dataset.account, appAccount: sel.value })
+              });
+              showToast('Account mapping saved.');
+            };
+          });
+        } catch (e) {
+          plaidListEl.innerHTML = `<div style="color:var(--danger);font-size:0.85rem">Could not load banks: ${e.message}</div>`;
+        }
+      }
+      refreshPlaidItems();
+
+      if (plaidConnect) plaidConnect.onclick = async () => {
+        plaidConnect.disabled = true;
+        plaidConnect.textContent = 'Loading…';
+        try {
+          const r = await fetch('/api/plaid/link-token', { method: 'POST' });
+          const { link_token, error } = await r.json();
+          if (error) throw new Error(error);
+          if (!window.Plaid) throw new Error('Plaid Link script did not load.');
+          const handler = window.Plaid.create({
+            token: link_token,
+            onSuccess: async (public_token, metadata) => {
+              const exch = await fetch('/api/plaid/exchange', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ public_token, metadata })
+              });
+              const out = await exch.json();
+              if (out.error) { showToast('Connect failed: ' + out.error, 'error'); return; }
+              showToast(`✓ ${metadata.institution.name} connected — ${out.accounts.length} accounts.`);
+              refreshPlaidItems();
+            },
+            onExit: (err) => {
+              if (err) showToast('Plaid Link exited: ' + (err.error_message || err.error_code || 'cancelled'));
+            }
+          });
+          handler.open();
+        } catch (e) {
+          showToast('Plaid error: ' + e.message, 'error');
+        } finally {
+          plaidConnect.disabled = false;
+          plaidConnect.textContent = '🏦 Connect a Bank';
+        }
+      };
+
+      if (plaidSync) plaidSync.onclick = async () => {
+        plaidSync.disabled = true;
+        plaidSyncEl.textContent = 'Syncing transactions from all linked banks…';
+        try {
+          const r = await fetch('/api/plaid/sync', { method: 'POST' });
+          const out = await r.json();
+          if (out.error) {
+            plaidSyncEl.innerHTML = `<span style="color:var(--danger)">Sync failed: ${out.error}</span>`;
+          } else {
+            plaidSyncEl.innerHTML = `✓ Added <b>${out.added}</b> new transactions across ${out.items.length} bank(s).`;
+            await DB.init(); // reload data
+            showToast(`✓ Synced ${out.added} transactions!`);
+            refreshPlaidItems();
+          }
+        } catch (e) {
+          plaidSyncEl.innerHTML = `<span style="color:var(--danger)">Network error: ${e.message}</span>`;
+        } finally {
+          plaidSync.disabled = false;
+        }
       };
     }, 50);
 
