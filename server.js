@@ -866,9 +866,15 @@ app.get('/api/plaid/balances', requireAuth, async (req, res) => {
         out.push({ itemId: item.id, institutionName: item.institutionName, error: e?.response?.data?.error_message || e.message });
       }
     }
-    // Cash on hand = sum of available balances of depository accounts (checking/savings)
-    const depositories = out.filter(a => a.type === 'depository' && typeof a.balance?.available === 'number');
-    const cashOnHand = depositories.reduce((s, a) => s + a.balance.available, 0);
+    // Cash on hand = sum of depository (checking/savings) balances.
+    // Plaid returns `available` for some banks and only `current` for others
+    // (especially Capital One savings) — fall back to `current` when `available` is null.
+    const depositories = out.filter(a => a.type === 'depository');
+    const cashOnHand = depositories.reduce((s, a) => {
+      const bal = a.balance || {};
+      const v = bal.available != null ? bal.available : (bal.current != null ? bal.current : 0);
+      return s + v;
+    }, 0);
     // Credit utilisation
     const credits = out.filter(a => a.type === 'credit');
     const creditOwed   = credits.reduce((s, a) => s + (a.balance?.current || 0), 0);
