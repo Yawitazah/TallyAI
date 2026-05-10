@@ -179,6 +179,8 @@ const DB = (() => {
   function importFromParsed(year, month, parsed) {
     if (!_data.data[year]) _data.data[year] = { annualTotals: null, months: {} };
     _data.data[year].months[month] = parsed;
+    // Recompute the summary from the imported items so totals & net are always correct
+    updateSummary(year, month);
     save();
   }
 

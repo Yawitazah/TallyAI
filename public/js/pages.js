@@ -237,7 +237,8 @@ const Pages = (() => {
     const expenses = s.totalExpenses || 0;
     const debt = s.debtPayments || 0;
     const sav = s.savingsContributions || 0;
-    const net = s.netCashFlow || 0;
+    // Compute net live so it stays correct even if a stale netCashFlow was imported
+    const net = income - expenses - debt - sav;
 
     const div = el('div');
 
@@ -535,13 +536,18 @@ const Pages = (() => {
     yearMonths.forEach(m => {
       const s = m.data?.summary;
       const hasData = s && (s.totalIncome > 0 || s.totalExpenses > 0);
+      // Compute net live from the displayed totals so it stays correct even
+      // when the stored netCashFlow wasn't captured during import
+      const liveNet = hasData
+        ? (s.totalIncome || 0) - (s.totalExpenses || 0) - (s.debtPayments || 0) - (s.savingsContributions || 0)
+        : 0;
       const card = el('div', `year-month-card${hasData ? '' : ' ym-empty'}`);
       card.innerHTML = `
         <div class="ym-name">${m.name}</div>
         ${hasData ? `
           <div class="ym-income">${fmt(s.totalIncome)}</div>
           <div class="ym-expense">${fmt(s.totalExpenses)}</div>
-          <div class="ym-net ${(s.netCashFlow||0)>=0?'pos':'neg'}">${fmt(s.netCashFlow||0)} net</div>
+          <div class="ym-net ${liveNet>=0?'pos':'neg'}">${fmt(liveNet)} net</div>
         ` : '<div class="ym-income text-muted">No data</div>'}`;
       card.onclick = () => App.navigate('monthly', year, m.name);
       grid.appendChild(card);
