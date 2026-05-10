@@ -11,8 +11,9 @@ const Pages = (() => {
     const expenses = s.totalExpenses || 0;
     const debtPay = s.debtPayments || 0;
     const savings = s.savingsContributions || 0;
-    const net = s.netCashFlow || 0;
-    const ending = s.endingBalance || 0;
+    // Compute live so net stays accurate even when stored netCashFlow is stale
+    const net = income - expenses - debtPay - savings;
+    const ending = (s.startingBalance || 0) + net;
 
     const incomeEl = el('div', 'stat-card income');
     incomeEl.innerHTML = `<div class="stat-icon">💚</div><div class="stat-label">Total Income</div><div class="stat-value positive">${fmt(income)}</div><div class="stat-sub">${month} ${year}</div>`;
@@ -74,6 +75,9 @@ const Pages = (() => {
 
     const div = el('div');
     div.append(statsGrid, chartsGrid, bottomGrid);
+
+    // Async: Cash Snapshot card at the very top (compact view)
+    buildCashSnapshotCard(true).then(card => { if (card) div.insertBefore(card, div.firstChild); });
 
     // Render charts after DOM append
     setTimeout(() => {

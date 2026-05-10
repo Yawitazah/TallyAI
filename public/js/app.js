@@ -82,16 +82,42 @@ const App = (() => {
     updateSidebarBalance();
   }
 
-  function updateSidebarBalance() {
-    const m = DB.getMonth(currentYear, currentMonth);
-    const balance = m?.summary?.endingBalance ?? 0;
+  async function updateSidebarBalance() {
     const balEl = document.getElementById('sidebar-balance');
-    if (balEl) {
-      balEl.textContent = fmt(balance);
-      balEl.className = 'sidebar-balance ' + (balance >= 0 ? 'positive' : 'negative');
-    }
     const monthEl = document.getElementById('sidebar-month');
-    if (monthEl) monthEl.textContent = `${currentMonth.slice(0,3)} ${currentYear}`;
+    const labelEl = document.getElementById('sidebar-balance-label');
+
+    // 1) Try live Plaid cash on hand first — that's what "current balance" should mean
+    let usedLive = false;
+    if (balEl) {
+      try {
+        const r = await fetch('/api/plaid/balances');
+        if (r.ok) {
+          const d = await r.json();
+          if (d.accounts && d.accounts.length && typeof d.cashOnHand === 'number') {
+            balEl.textContent = fmt(d.cashOnHand);
+            balEl.className = 'sidebar-balance ' + (d.cashOnHand >= 0 ? 'positive' : 'negative');
+            if (labelEl) labelEl.textContent = 'CURRENT CASH';
+            if (monthEl) monthEl.textContent = 'Live from bank';
+            usedLive = true;
+          }
+        }
+      } catch {}
+    }
+
+    // 2) Fallback — use the month's computed ending balance from live totals
+    if (!usedLive) {
+      const m = DB.getMonth(currentYear, currentMonth);
+      const s = m?.summary || {};
+      const net = (s.totalIncome || 0) - (s.totalExpenses || 0) - (s.debtPayments || 0) - (s.savingsContributions || 0);
+      const balance = (s.startingBalance || 0) + net;
+      if (balEl) {
+        balEl.textContent = fmt(balance);
+        balEl.className = 'sidebar-balance ' + (balance >= 0 ? 'positive' : 'negative');
+      }
+      if (labelEl) labelEl.textContent = 'CURRENT BALANCE';
+      if (monthEl) monthEl.textContent = `${currentMonth.slice(0,3)} ${currentYear}`;
+    }
   }
 
   function updateUserBadge(user) {
