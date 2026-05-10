@@ -175,6 +175,12 @@ function requireAuth(req, res, next) {
   res.status(401).json({ error: 'Not authenticated' });
 }
 
+function startUserSession(req, user) {
+  req.session.userId = user.id;
+  req.session.userName = user.name || user.username || user.role;
+  req.session.userColor = user.color;
+}
+
 // ── Static files (login.html accessible without auth) ──
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -190,26 +196,11 @@ app.post('/api/login', (req, res) => {
 
   const normalizedUsername = username.trim().toLowerCase();
   const users = migrateLegacyDataIfNeeded();
-  let user = users.find(u => u.username && u.username.toLowerCase() === normalizedUsername);
-  let created = false;
+  const user = users.find(u => u.username && u.username.toLowerCase() === normalizedUsername);
 
   // First-run: no users have credentials set yet → let anyone in as person1
-  if (!user) {
-    user = {
-      id: makeId(),
-      username: username.trim(),
-      name: username.trim(),
-      color: '#7c6ef8',
-      role: 'Primary',
-      passwordHash: hashPin(password)
-    };
-    users.push(user);
-    saveUsers(users);
-    saveUserData(user.id, createBlankData(user));
-    created = true;
-  }
+  if (!user) return res.status(401).json({ error: 'No account found for that username. Create an account first.' });
 
-  if (!user) return res.status(401).json({ error: 'Invalid username or password.' });
 
   // Password not yet set for this user — first login sets it
   if (!user.passwordHash) {
@@ -219,10 +210,35 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
-  req.session.userId = user.id;
-  req.session.userName = user.name || user.username || user.role;
-  req.session.userColor = user.color;
-  res.json({ success: true, created, user: publicUser(user) });
+  startUserSession(req, user);
+  res.json({ success: true, created: false, user: publicUser(user) });
+});
+
+app.post('/api/signup', (req, res) => {
+  const { username, password, name } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
+  if (String(password).length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+
+  const nextUsername = String(username).trim();
+  const normalizedUsername = nextUsername.toLowerCase();
+  const users = migrateLegacyDataIfNeeded();
+  const existing = users.find(u => u.username && u.username.toLowerCase() === normalizedUsername);
+  if (existing) return res.status(409).json({ error: 'That username already exists. Sign in instead.' });
+
+  const user = {
+    id: makeId(),
+    username: nextUsername,
+    name: String(name || nextUsername).trim() || nextUsername,
+    color: '#7c6ef8',
+    role: 'Primary',
+    passwordHash: hashPin(password)
+  };
+
+  users.push(user);
+  saveUsers(users);
+  saveUserData(user.id, createBlankData(user));
+  startUserSession(req, user);
+  res.status(201).json({ success: true, created: true, user: publicUser(user) });
 });
 
 app.post('/api/logout', (req, res) => {

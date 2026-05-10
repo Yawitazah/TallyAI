@@ -2,6 +2,7 @@ node_modules/
 data.json
 data/
 data-smoke/
+data-*/
 server.test.*.log
 .claude/
 *.bat
