@@ -1156,6 +1156,23 @@ const Pages = (() => {
       });
 
       // Credential save for each user
+      async function syncUserLogin(user, password = '') {
+        if (!user?.username) return true;
+        const res = await fetch('/api/set-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            username: user.username,
+            password,
+            name: user.name,
+            role: user.role,
+            color: user.color
+          })
+        });
+        return res.ok;
+      }
+
       [0, 1].forEach(idx => {
         const credBtn = document.getElementById(`s-u${idx}-cred-save`);
         if (!credBtn) return;
@@ -1167,22 +1184,7 @@ const Pages = (() => {
           const cfg = DB.getSettings();
           if (cfg.users[idx]) cfg.users[idx].username = username;
           DB.save();
-          // Set password on server if provided
-          if (password) {
-            const res = await fetch('/api/set-password', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                userId: cfg.users[idx]?.id,
-                username,
-                password,
-                name: cfg.users[idx]?.name,
-                role: cfg.users[idx]?.role,
-                color: cfg.users[idx]?.color
-              })
-            });
-            if (!res.ok) { showToast('Failed to save password', 'error'); return; }
-          }
+          if (!(await syncUserLogin(cfg.users[idx], password))) { showToast('Failed to save login', 'error'); return; }
           showToast('Credentials saved!');
           App.render();
         };
@@ -1214,7 +1216,7 @@ const Pages = (() => {
         if (confirm('Reset ALL data to original spreadsheet import? This cannot be undone.')) location.reload();
       };
 
-      document.getElementById('s-save').onclick = () => {
+      document.getElementById('s-save').onclick = async () => {
         const cfg = DB.getSettings();
         cfg.householdName = document.getElementById('s-name').value.trim() || cfg.householdName;
         [0, 1].forEach(idx => {
@@ -1230,6 +1232,12 @@ const Pages = (() => {
         const hhEl = document.getElementById('household-name');
         if (hhEl) hhEl.textContent = cfg.householdName;
         DB.save();
+        for (const user of cfg.users) {
+          if (user.username && !(await syncUserLogin(user))) {
+            showToast(`Could not sync login for ${user.username}`, 'error');
+            return;
+          }
+        }
         showToast('Settings saved!');
       };
     }, 50);
