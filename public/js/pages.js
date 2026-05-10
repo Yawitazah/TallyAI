@@ -1324,6 +1324,7 @@ const Pages = (() => {
               if (!confirm(`Disconnect ${b.closest('.plaid-item').querySelector('.plaid-item-name').textContent}? This won't delete entries already synced.`)) return;
               await fetch('/api/plaid/item/' + b.dataset.id, { method: 'DELETE' });
               showToast('Bank disconnected.');
+              await DB.init();
               refreshPlaidItems();
             };
           });
@@ -1363,6 +1364,8 @@ const Pages = (() => {
               const out = await exch.json();
               if (out.error) { showToast('Connect failed: ' + out.error, 'error'); return; }
               showToast(`✓ ${metadata.institution.name} connected — ${out.accounts.length} accounts.`);
+              // Refresh the in-memory data so subsequent settings saves include the new Plaid item
+              await DB.init();
               refreshPlaidItems();
             },
             onExit: (err) => {

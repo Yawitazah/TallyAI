@@ -281,7 +281,16 @@ app.get('/api/data', requireAuth, (req, res) => {
 
 app.post('/api/data', requireAuth, (req, res) => {
   try {
-    saveUserData(req.session.userId, req.body);
+    // Preserve server-managed fields that the front-end shouldn't be allowed to overwrite
+    // (Plaid items are mutated only by the /api/plaid/* endpoints — they should never be
+    // wiped by a generic settings save that happened to load stale data.)
+    const existing = readUserData(req.session.userId) || {};
+    const incoming = req.body || {};
+    if (existing.settings?.plaidItems) {
+      incoming.settings = incoming.settings || {};
+      incoming.settings.plaidItems = existing.settings.plaidItems;
+    }
+    saveUserData(req.session.userId, incoming);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
