@@ -648,7 +648,7 @@ const Pages = (() => {
         bar.style.width = '50%';
         label.textContent = 'Parsing sheets…';
 
-        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const wb = XLSX.read(e.target.result, { type: 'array', cellFormula: true, cellNF: false });
         const parsed = parseWorkbook(wb);
 
         bar.style.width = '80%';
@@ -684,19 +684,48 @@ const Pages = (() => {
 
       const ws = wb.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      const parsed = parseMonthSheet(rows);
+      const parsed = parseMonthSheet(rows, ws);
       if (parsed) result[found] = parsed;
     });
 
     return result;
   }
 
-  function parseMonthSheet(rows) {
-    const nonEmpty = rows.filter(r => r.some(c => c !== '' && c !== null));
+  // Parse a formula string like "77.21+151.59+33.16" → [77.21, 151.59, 33.16]
+  // Returns [] if it's not a simple numeric addition.
+  function parseAddFormula(f) {
+    if (!f || typeof f !== 'string') return [];
+    const clean = f.replace(/^=/, '').replace(/\s/g, '');
+    if (!/^-?[\d.]+([\+\-]-?[\d.]+)+$/.test(clean)) return [];
+    const parts = clean.split('+').map(v => parseFloat(v)).filter(v => !isNaN(v) && v > 0);
+    return parts.length >= 2 ? parts : [];
+  }
+
+  // For a given row index and column index, build an entries[] array
+  // from the formula in that cell (if it is a sum-of-numbers formula).
+  function entriesFromCell(ws, rowIdx, colIdx, accountName) {
+    if (!ws) return [];
+    const addr = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+    const cell = ws[addr];
+    if (!cell || !cell.f) return [];
+    const parts = parseAddFormula(cell.f);
+    return parts.map((amt, i) => ({
+      desc: `Entry ${i + 1}`,
+      amount: Math.round(amt * 100) / 100,
+      date: '',
+      account: accountName || ''
+    }));
+  }
+
+  function parseMonthSheet(rows, ws) {
     const month = { income: [], fixedExpenses: [], variableExpenses: [], debt: [], savings: [], summary: { startingBalance:0, totalIncome:0, totalExpenses:0, debtPayments:0, savingsContributions:0, netCashFlow:0, endingBalance:0 } };
 
     let section = null;
-    for (const row of nonEmpty) {
+    // Iterate the original rows so we know each row's real index in the sheet
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row || !row.some(c => c !== '' && c !== null && c !== undefined)) continue;
+
       const first = String(row[0] || '').trim().toUpperCase();
 
       if (first.includes('INCOME') && !first.includes('NET') && !first.includes('TOTAL')) { section = 'income'; continue; }
@@ -725,16 +754,23 @@ const Pages = (() => {
       }
 
       if (section === 'income') {
-        month.income.push({ source: name, expected: parseNum(row[1]), actual: parseNum(row[2]), account: String(row[5]||row[4]||'').trim(), purpose: String(row[6]||'').trim() });
+        const account = String(row[5]||row[4]||'').trim();
+        month.income.push({ source: name, expected: parseNum(row[1]), actual: parseNum(row[2]), account, purpose: String(row[6]||'').trim(), entries: entriesFromCell(ws, r, 2, account) });
       } else if (section === 'fixed') {
-        month.fixedExpenses.push({ category: name, budget: parseNum(row[1]), actual: parseNum(row[2]), account: String(row[4]||'').trim(), dueDate: String(row[5]||'').trim() });
+        const account = String(row[4]||'').trim();
+        month.fixedExpenses.push({ category: name, budget: parseNum(row[1]), actual: parseNum(row[2]), account, dueDate: String(row[5]||'').trim(), entries: entriesFromCell(ws, r, 2, account) });
       } else if (section === 'variable') {
-        month.variableExpenses.push({ category: name, budget: parseNum(row[1]), actual: parseNum(row[2]), account: String(row[4]||'').trim() });
+        const account = String(row[4]||'').trim();
+        month.variableExpenses.push({ category: name, budget: parseNum(row[1]), actual: parseNum(row[2]), account, entries: entriesFromCell(ws, r, 2, account) });
       } else if (section === 'debt') {
         const bal = parseNum(row[1]);
-        if (bal > 0 || name) month.debt.push({ category: name, balance: bal, interestRate: parseNum(row[2]) * (parseNum(row[2]) < 1 ? 100 : 1), payment: parseNum(row[3]), account: String(row[6]||row[4]||'').trim() });
+        if (bal > 0 || name) {
+          const account = String(row[6]||row[4]||'').trim();
+          month.debt.push({ category: name, balance: bal, interestRate: parseNum(row[2]) * (parseNum(row[2]) < 1 ? 100 : 1), payment: parseNum(row[3]), account, entries: entriesFromCell(ws, r, 3, account) });
+        }
       } else if (section === 'savings') {
-        month.savings.push({ goal: name, target: parseNum(row[1]), contribution: parseNum(row[2]), currentBalance: parseNum(row[3]), account: String(row[6]||row[5]||'').trim() });
+        const account = String(row[6]||row[5]||'').trim();
+        month.savings.push({ goal: name, target: parseNum(row[1]), contribution: parseNum(row[2]), currentBalance: parseNum(row[3]), account, entries: entriesFromCell(ws, r, 2, account) });
       }
     }
     return month;
