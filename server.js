@@ -677,6 +677,131 @@ app.post('/api/plaid/item/:id/account-map', requireAuth, (req, res) => {
   res.json({ success: true });
 });
 
+// Live balances across all linked accounts
+app.get('/api/plaid/balances', requireAuth, async (req, res) => {
+  if (!ensurePlaid(res)) return;
+  try {
+    const data = readUserData(req.session.userId);
+    const items = data?.settings?.plaidItems || [];
+    const out = [];
+    for (const item of items) {
+      try {
+        const r = await plaidClient.accountsBalanceGet({ access_token: item.accessToken });
+        for (const a of r.data.accounts) {
+          out.push({
+            itemId: item.id,
+            institutionName: item.institutionName,
+            accountId: a.account_id,
+            name: a.name,
+            mask: a.mask,
+            type: a.type,
+            subtype: a.subtype,
+            balance: {
+              available: a.balances.available,
+              current:   a.balances.current,
+              limit:     a.balances.limit,
+              currency:  a.balances.iso_currency_code || 'USD'
+            }
+          });
+        }
+      } catch (e) {
+        out.push({ itemId: item.id, institutionName: item.institutionName, error: e?.response?.data?.error_message || e.message });
+      }
+    }
+    // Cash on hand = sum of available balances of depository accounts (checking/savings)
+    const depositories = out.filter(a => a.type === 'depository' && typeof a.balance?.available === 'number');
+    const cashOnHand = depositories.reduce((s, a) => s + a.balance.available, 0);
+    // Credit utilisation
+    const credits = out.filter(a => a.type === 'credit');
+    const creditOwed   = credits.reduce((s, a) => s + (a.balance?.current || 0), 0);
+    const creditLimit  = credits.reduce((s, a) => s + (a.balance?.limit   || 0), 0);
+
+    res.json({ accounts: out, cashOnHand, creditOwed, creditLimit });
+  } catch (e) {
+    console.error('Plaid balances error:', e?.response?.data || e.message);
+    res.status(500).json({ error: e?.response?.data?.error_message || e.message });
+  }
+});
+
+// Recurring streams (subscriptions, bills) — matched to existing items, plus what's missing
+app.get('/api/plaid/recurring', requireAuth, async (req, res) => {
+  if (!ensurePlaid(res)) return;
+  try {
+    const data = readUserData(req.session.userId);
+    const items = data?.settings?.plaidItems || [];
+
+    // Gather all existing fixedExpenses across the latest year for matching
+    const years = Object.keys(data?.data || {}).sort().reverse();
+    const latestYear = years[0];
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const existingFixed = [];
+    if (latestYear) {
+      for (const m of months) {
+        const md = data.data[latestYear].months?.[m];
+        if (!md) continue;
+        for (const it of (md.fixedExpenses || [])) {
+          existingFixed.push({ name: (it.category || '').toLowerCase(), amount: it.actual || it.budget || 0 });
+        }
+        for (const it of (md.variableExpenses || [])) {
+          if ((it.category || '').toLowerCase().includes('subscription') || (it.category || '').toLowerCase().includes('netflix') || (it.category || '').toLowerCase().includes('spotify')) {
+            existingFixed.push({ name: (it.category || '').toLowerCase(), amount: it.actual || it.budget || 0 });
+          }
+        }
+      }
+    }
+    const seen = new Map();
+    for (const ef of existingFixed) {
+      if (!seen.has(ef.name) || (ef.amount > seen.get(ef.name))) seen.set(ef.name, ef.amount);
+    }
+
+    const matched = [], missing = [];
+    for (const item of items) {
+      try {
+        const r = await plaidClient.transactionsRecurringGet({
+          access_token: item.accessToken,
+          account_ids: item.accounts?.map(a => a.id)
+        });
+        const streams = [...(r.data.outflow_streams || []), ...(r.data.inflow_streams || [])];
+        for (const s of streams) {
+          if (s.is_active === false) continue;
+          const merchantName = s.merchant_name || s.description || 'Unknown';
+          const amount = Math.abs(s.average_amount?.amount || s.last_amount?.amount || 0);
+          const freq   = s.frequency || 'UNKNOWN';
+          const lastDate = s.last_date || s.last_transaction_date || '';
+          // match heuristic: any existing item whose name contains the merchant or vice-versa
+          let matchedTo = null;
+          const lowerMerchant = merchantName.toLowerCase();
+          for (const [name, amt] of seen) {
+            if (name.includes(lowerMerchant.split(' ')[0]) || lowerMerchant.includes(name.split(' ')[0])) {
+              matchedTo = { name, amount: amt };
+              break;
+            }
+          }
+          const stream = {
+            merchantName, amount, freq, lastDate,
+            type: s.category?.[0] || 'Unknown',
+            isInflow: !!(r.data.inflow_streams || []).find(x => x.stream_id === s.stream_id),
+            institution: item.institutionName,
+            account: item.accounts?.find(a => a.id === s.account_id)?.name || ''
+          };
+          if (matchedTo) {
+            stream.matchedTo = matchedTo;
+            matched.push(stream);
+          } else {
+            missing.push(stream);
+          }
+        }
+      } catch (e) {
+        // Some plans don't include recurring — degrade gracefully
+        console.warn('Plaid recurring error for item', item.id, e?.response?.data?.error_message || e.message);
+      }
+    }
+    res.json({ matched, missing });
+  } catch (e) {
+    res.status(500).json({ error: e?.response?.data?.error_message || e.message });
+  }
+});
+
 // Sync transactions from all linked items into entries[]
 app.post('/api/plaid/sync', requireAuth, async (req, res) => {
   if (!ensurePlaid(res)) return;

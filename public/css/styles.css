@@ -866,6 +866,61 @@ body {
 .plaid-account-type { font-size: 0.7rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
 .plaid-account-map { min-width: 180px; max-width: 100%; }
 
+/* ===== PLAID INSIGHTS ===== */
+.plaid-balances { display: flex; flex-direction: column; gap: 14px; }
+.plaid-balance-headline {
+  background: linear-gradient(135deg, rgba(124,110,248,0.08), rgba(244,185,66,0.05));
+  border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 20px;
+}
+.plaid-balance-num {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.9rem; font-weight: 800; line-height: 1;
+}
+.plaid-balance-num.positive { color: var(--success); }
+.plaid-balance-num.negative { color: var(--danger); }
+.plaid-balance-label { font-size: 0.78rem; color: var(--text3); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.plaid-balance-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.plaid-balance-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+}
+.plaid-balance-info { min-width: 0; }
+.plaid-balance-name { font-weight: 600; font-size: 0.9rem; }
+.plaid-balance-sub  { font-size: 0.72rem; color: var(--text3); margin-top: 2px; }
+.plaid-balance-amt {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 1rem; flex-shrink: 0;
+}
+.plaid-balance-amt.positive { color: var(--success); }
+.plaid-balance-amt.negative { color: var(--danger); }
+
+.plaid-section-h {
+  font-size: 0.8rem; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  margin: 0 0 10px;
+}
+.plaid-section-h.success { color: var(--success); }
+.plaid-section-h.warning { color: var(--warning); }
+
+.plaid-recurring-list { display: flex; flex-direction: column; gap: 8px; }
+.plaid-stream {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+}
+.plaid-stream.matched { border-left: 3px solid var(--success); }
+.plaid-stream.missing { border-left: 3px solid var(--warning); }
+.plaid-stream-info { min-width: 0; flex: 1; }
+.plaid-stream-name { font-weight: 600; font-size: 0.9rem; }
+.plaid-stream-meta { font-size: 0.72rem; color: var(--text3); margin-top: 2px; }
+.plaid-stream-match { font-size: 0.72rem; color: var(--success); margin-top: 4px; }
+.plaid-stream-amt {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: 1rem; color: var(--text); flex-shrink: 0;
+}
+
 /* ===== TOAST ===== */
 .toast {
   position: fixed; bottom: 24px; right: 24px; z-index: 999;

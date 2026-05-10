@@ -1102,8 +1102,31 @@ const Pages = (() => {
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn btn-primary" id="plaid-connect-btn">🏦 Connect a Bank</button>
           <button class="btn btn-ghost" id="plaid-sync-btn">↻ Sync Transactions</button>
+          <button class="btn btn-ghost" id="plaid-insights-btn">📊 Refresh Insights</button>
         </div>
         <div id="plaid-sync-status" style="margin-top:10px;font-size:0.85rem;color:var(--text3)"></div>
+      </div>
+
+      <div class="settings-section" id="plaid-insights-wrap" style="display:none">
+        <div class="settings-title">💰 Cash Snapshot</div>
+        <div id="plaid-balances" class="plaid-balances"></div>
+      </div>
+
+      <div class="settings-section" id="plaid-recurring-wrap" style="display:none">
+        <div class="settings-title">🔁 Recurring Charges Detected</div>
+        <div class="settings-desc" style="margin-bottom:12px">
+          Plaid automatically detects subscriptions and recurring bills. We've cross-referenced them
+          with your existing budget — anything in <span style="color:var(--warning)">"Missing from your budget"</span> is
+          a real recurring charge you may have forgotten to add.
+        </div>
+        <div class="plaid-recurring-section">
+          <h4 class="plaid-section-h success">✓ Matched to your budget</h4>
+          <div id="plaid-recurring-matched" class="plaid-recurring-list"></div>
+        </div>
+        <div class="plaid-recurring-section" style="margin-top:18px">
+          <h4 class="plaid-section-h warning">⚠ Missing from your budget</h4>
+          <div id="plaid-recurring-missing" class="plaid-recurring-list"></div>
+        </div>
       </div>
 
       <div class="settings-section">
@@ -1354,6 +1377,101 @@ const Pages = (() => {
           plaidConnect.textContent = '🏦 Connect a Bank';
         }
       };
+
+      const plaidInsights = document.getElementById('plaid-insights-btn');
+      const balancesEl    = document.getElementById('plaid-balances');
+      const recMatchedEl  = document.getElementById('plaid-recurring-matched');
+      const recMissingEl  = document.getElementById('plaid-recurring-missing');
+      const insightsWrap  = document.getElementById('plaid-insights-wrap');
+      const recurringWrap = document.getElementById('plaid-recurring-wrap');
+
+      function fmtMoney(n) { return '$' + (Math.round((n||0)*100)/100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+      async function refreshInsights() {
+        if (!plaidInsights) return;
+        plaidInsights.disabled = true;
+        const orig = plaidInsights.textContent;
+        plaidInsights.textContent = 'Loading…';
+        try {
+          // ── Balances
+          const bRes = await fetch('/api/plaid/balances');
+          const bData = await bRes.json();
+          if (bData.error) {
+            insightsWrap.style.display = 'block';
+            balancesEl.innerHTML = `<div style="color:var(--danger)">Error: ${bData.error}</div>`;
+          } else if (bData.accounts && bData.accounts.length) {
+            insightsWrap.style.display = 'block';
+            const cashCard = `
+              <div class="plaid-balance-headline">
+                <div class="plaid-balance-num positive">${fmtMoney(bData.cashOnHand)}</div>
+                <div class="plaid-balance-label">Cash on hand (checking + savings)</div>
+              </div>`;
+            const creditCard = bData.creditOwed > 0 ? `
+              <div class="plaid-balance-headline">
+                <div class="plaid-balance-num negative">${fmtMoney(bData.creditOwed)}</div>
+                <div class="plaid-balance-label">Credit balance owed${bData.creditLimit ? ` of ${fmtMoney(bData.creditLimit)} limit` : ''}</div>
+              </div>` : '';
+            const accList = bData.accounts.map(a => {
+              const bal = a.balance || {};
+              const main = a.type === 'credit' ? (bal.current || 0) : (bal.available != null ? bal.available : (bal.current || 0));
+              const sign = a.type === 'credit' ? 'negative' : (main >= 0 ? 'positive' : 'negative');
+              return `
+                <div class="plaid-balance-row">
+                  <div class="plaid-balance-info">
+                    <div class="plaid-balance-name">${a.name} ····${a.mask || ''}</div>
+                    <div class="plaid-balance-sub">${a.institutionName} · ${a.subtype || a.type}</div>
+                  </div>
+                  <div class="plaid-balance-amt ${sign}">${fmtMoney(main)}</div>
+                </div>`;
+            }).join('');
+            balancesEl.innerHTML = `${cashCard}${creditCard}<div class="plaid-balance-list">${accList}</div>`;
+          } else {
+            insightsWrap.style.display = 'block';
+            balancesEl.innerHTML = '<div style="color:var(--text3)">No connected accounts.</div>';
+          }
+
+          // ── Recurring
+          const rRes = await fetch('/api/plaid/recurring');
+          const rData = await rRes.json();
+          if (rData.error) {
+            recurringWrap.style.display = 'block';
+            recMatchedEl.innerHTML = '';
+            recMissingEl.innerHTML = `<div style="color:var(--danger)">Error: ${rData.error}</div>`;
+          } else if ((rData.matched && rData.matched.length) || (rData.missing && rData.missing.length)) {
+            recurringWrap.style.display = 'block';
+            const renderStream = (s, isMissing) => {
+              const freqLabel = (s.freq || 'unknown').toLowerCase().replace('_', ' ');
+              return `
+                <div class="plaid-stream ${isMissing ? 'missing' : 'matched'}">
+                  <div class="plaid-stream-info">
+                    <div class="plaid-stream-name">${s.merchantName}</div>
+                    <div class="plaid-stream-meta">${freqLabel} · last seen ${s.lastDate || '—'} · ${s.account || s.institution}</div>
+                    ${s.matchedTo ? `<div class="plaid-stream-match">→ matches "${s.matchedTo.name}" in your budget (${fmtMoney(s.matchedTo.amount)})</div>` : ''}
+                  </div>
+                  <div class="plaid-stream-amt">${fmtMoney(s.amount)}</div>
+                </div>`;
+            };
+            recMatchedEl.innerHTML = (rData.matched || []).length
+              ? rData.matched.map(s => renderStream(s, false)).join('')
+              : '<div style="color:var(--text3);font-size:0.85rem">Nothing matched yet — sync your transactions first if you just connected.</div>';
+            recMissingEl.innerHTML = (rData.missing || []).length
+              ? rData.missing.map(s => renderStream(s, true)).join('')
+              : '<div style="color:var(--success);font-size:0.85rem">✓ Every detected subscription is already in your budget.</div>';
+          }
+        } catch (e) {
+          showToast('Insights error: ' + e.message, 'error');
+        } finally {
+          plaidInsights.disabled = false;
+          plaidInsights.textContent = orig;
+        }
+      }
+      if (plaidInsights) plaidInsights.onclick = refreshInsights;
+      // Auto-load insights when settings page opens, if any banks are connected
+      setTimeout(async () => {
+        const r = await fetch('/api/plaid/items');
+        const d = await r.json();
+        if (d.items && d.items.length) refreshInsights();
+      }, 200);
 
       if (plaidSync) plaidSync.onclick = async () => {
         plaidSync.disabled = true;
