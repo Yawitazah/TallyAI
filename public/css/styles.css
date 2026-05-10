@@ -1190,9 +1190,9 @@ input.inline-edit {
     flex: 1;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    gap: 3px;
+    gap: 4px;
     text-decoration: none;
-    color: var(--text3);
+    color: var(--text2);
     background: none; border: none;
     cursor: pointer;
     padding: 0;
