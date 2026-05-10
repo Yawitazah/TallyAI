@@ -148,6 +148,74 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast"></div>
 
+  <!-- Mobile Bottom Nav -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <a href="#" class="bn-tab active" data-page="dashboard">
+      <span class="bn-icon">⬡</span>
+      <span class="bn-label">Home</span>
+    </a>
+    <a href="#" class="bn-tab" data-page="monthly">
+      <span class="bn-icon">📅</span>
+      <span class="bn-label">Monthly</span>
+    </a>
+    <div class="bn-add-wrap">
+      <button class="bn-add" id="bn-add" title="Add Transaction">＋</button>
+    </div>
+    <a href="#" class="bn-tab" data-page="advisor">
+      <span class="bn-icon">✦</span>
+      <span class="bn-label">Tally AI</span>
+    </a>
+    <button class="bn-tab" id="bn-more">
+      <span class="bn-icon">•••</span>
+      <span class="bn-label">More</span>
+    </button>
+  </nav>
+
+  <!-- More Drawer -->
+  <div class="more-overlay" id="more-overlay"></div>
+  <div class="more-drawer" id="more-drawer">
+    <div class="more-drawer-handle"></div>
+
+    <div class="more-drawer-title">Overview</div>
+    <a href="#" class="more-item" data-page="yearly">
+      <span class="mi-icon">📊</span>Year Overview
+    </a>
+
+    <div class="more-drawer-title">Manage</div>
+    <a href="#" class="more-item" data-page="goals">
+      <span class="mi-icon">🎯</span>Savings Goals
+    </a>
+    <a href="#" class="more-item" data-page="debt">
+      <span class="mi-icon">⚡</span>Debt Tracker
+    </a>
+    <a href="#" class="more-item" data-page="bills">
+      <span class="mi-icon">🗓</span>Bills Calendar
+    </a>
+
+    <div class="more-drawer-title">Tools</div>
+    <button class="more-item" id="more-voice">
+      <span class="mi-icon">🎤</span>Voice Entry
+    </button>
+    <a href="#" class="more-item" data-page="import">
+      <span class="mi-icon">⬆</span>Import Spreadsheet
+    </a>
+    <a href="#" class="more-item" data-page="settings">
+      <span class="mi-icon">⚙</span>Settings
+    </a>
+
+    <div class="more-divider"></div>
+    <div class="more-user-row">
+      <div class="more-user-avatar" id="more-user-avatar">?</div>
+      <div class="more-user-info">
+        <div class="more-user-name" id="more-user-name">—</div>
+        <div class="more-user-role" id="more-user-role">Signed in</div>
+      </div>
+    </div>
+    <button class="more-logout" id="more-logout">
+      <span class="mi-icon">⏏</span>Sign Out
+    </button>
+  </div>
+
   <script src="/js/seed-data.js"></script>
   <script src="/js/db.js"></script>
   <script src="/js/utils.js"></script>

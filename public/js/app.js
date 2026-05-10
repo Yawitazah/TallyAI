@@ -14,12 +14,17 @@ const App = (() => {
       l.classList.toggle('active', l.dataset.page === currentPage);
     });
 
+    // Sync bottom nav active tabs
+    document.querySelectorAll('.bottom-nav .bn-tab[data-page]').forEach(t => {
+      t.classList.toggle('active', t.dataset.page === currentPage);
+    });
+    // Sync more-drawer items
+    document.querySelectorAll('.more-item[data-page]').forEach(t => {
+      t.classList.toggle('active', t.dataset.page === currentPage);
+    });
+
     updateTopBar();
     render();
-
-    if (window.innerWidth <= 900) {
-      document.getElementById('sidebar').classList.remove('open');
-    }
   }
 
   function render() {
@@ -91,15 +96,21 @@ const App = (() => {
 
   function updateUserBadge(user) {
     if (!user) return;
-    const avatar = document.getElementById('user-badge-avatar');
-    const name = document.getElementById('user-badge-name');
     const initial = (user.userName || user.name || '?')[0].toUpperCase();
-    if (avatar) {
-      avatar.textContent = initial;
-      avatar.style.background = (user.userColor || '#7c6ef8') + '33';
-      avatar.style.color = user.userColor || '#7c6ef8';
-    }
-    if (name) name.textContent = user.userName || user.name || '';
+    const color   = user.userColor || '#7c6ef8';
+
+    const avatar = document.getElementById('user-badge-avatar');
+    const name   = document.getElementById('user-badge-name');
+    if (avatar) { avatar.textContent = initial; avatar.style.background = color + '33'; avatar.style.color = color; }
+    if (name)   name.textContent = user.userName || user.name || '';
+
+    // More drawer
+    const mAvatar = document.getElementById('more-user-avatar');
+    const mName   = document.getElementById('more-user-name');
+    const mRole   = document.getElementById('more-user-role');
+    if (mAvatar) { mAvatar.textContent = initial; mAvatar.style.background = color + '33'; mAvatar.style.color = color; }
+    if (mName)   mName.textContent = user.userName || user.name || '';
+    if (mRole)   mRole.textContent = user.userColor ? 'Primary Account' : 'Signed in';
   }
 
   function bindEvents() {
@@ -156,6 +167,54 @@ const App = (() => {
         window.location.href = '/login.html';
       });
     }
+
+    // ── Mobile bottom nav ──
+    document.querySelectorAll('.bottom-nav .bn-tab[data-page]').forEach(tab => {
+      tab.addEventListener('click', e => {
+        e.preventDefault();
+        navigate(tab.dataset.page);
+      });
+    });
+
+    const bnAdd = document.getElementById('bn-add');
+    if (bnAdd) bnAdd.addEventListener('click', () => Pages.openAddModal(currentYear, currentMonth));
+
+    // More drawer
+    const moreOverlay = document.getElementById('more-overlay');
+    const moreDrawer  = document.getElementById('more-drawer');
+    const bnMore      = document.getElementById('bn-more');
+
+    function openMoreDrawer() {
+      moreDrawer.classList.add('open');
+      moreOverlay.classList.add('open');
+    }
+    function closeMoreDrawer() {
+      moreDrawer.classList.remove('open');
+      moreOverlay.classList.remove('open');
+    }
+
+    if (bnMore)      bnMore.addEventListener('click', openMoreDrawer);
+    if (moreOverlay) moreOverlay.addEventListener('click', closeMoreDrawer);
+
+    document.querySelectorAll('.more-item[data-page]').forEach(item => {
+      item.addEventListener('click', e => {
+        e.preventDefault();
+        closeMoreDrawer();
+        navigate(item.dataset.page);
+      });
+    });
+
+    const moreVoice = document.getElementById('more-voice');
+    if (moreVoice) moreVoice.addEventListener('click', () => {
+      closeMoreDrawer();
+      VoiceModal.open(currentYear, currentMonth);
+    });
+
+    const moreLogout = document.getElementById('more-logout');
+    if (moreLogout) moreLogout.addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
 
     VoiceModal.bindEvents();
 
