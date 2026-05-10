@@ -926,10 +926,14 @@ input.inline-edit {
   .logout-btn { display: none !important; }
 
   /* ── Layout & content padding ── */
-  html, body { overflow-x: hidden; max-width: 100vw; }
-  body { font-size: 15px; }
-  .main-content { margin-left: 0 !important; max-width: 100vw; overflow-x: hidden; }
-  .page-content { padding: 14px 12px calc(72px + env(safe-area-inset-bottom)); max-width: 100%; overflow-x: hidden; }
+  html, body { overflow-x: hidden; width: 100%; }
+  body { font-size: 15px; min-height: auto; }
+  .main-content { margin-left: 0 !important; width: 100%; overflow-x: hidden; min-height: auto; }
+  .page-content {
+    padding: 14px 12px;
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    width: 100%; overflow-x: hidden;
+  }
 
   /* ── Topbar (compact) ── */
   .topbar {
@@ -1167,16 +1171,19 @@ input.inline-edit {
   .btn-ghost { min-height: 40px; }
 
   /* ── BOTTOM NAV BAR ── */
+  /* Extends into the system safe-area so its dark background fills the
+     space below the gesture pill (no visible gap). Content sits above
+     the pill via padding-bottom: env(safe-area-inset-bottom). */
   .bottom-nav {
     display: flex;
     position: fixed;
     bottom: 0; left: 0; right: 0;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-bottom));
+    padding: 0 4px env(safe-area-inset-bottom) 4px;
     background: var(--surface);
     border-top: 1px solid var(--border);
     z-index: 200;
     align-items: stretch;
-    padding: 0 4px;
     box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
   }
   .bn-tab {
