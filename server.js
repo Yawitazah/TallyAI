@@ -434,6 +434,30 @@ function ensurePlaid(res) {
   return true;
 }
 
+// Public storage diagnostic — confirms whether the Railway volume is actually mounted
+app.get('/api/debug/storage', (req, res) => {
+  function safeList(dir) {
+    try { return fs.readdirSync(dir).map(f => {
+      try {
+        const st = fs.statSync(path.join(dir, f));
+        return { name: f, size: st.size, isDir: st.isDirectory(), mtime: st.mtime };
+      } catch { return { name: f }; }
+    }); } catch { return null; }
+  }
+  res.json({
+    cwd: process.cwd(),
+    __dirname,
+    DATA_DIR,
+    DATA_DIR_env: process.env.DATA_DIR || null,
+    slashDataExists: fs.existsSync('/data'),
+    DATA_DIR_exists: fs.existsSync(DATA_DIR),
+    DATA_DIR_contents: safeList(DATA_DIR),
+    slashDataContents: safeList('/data'),
+    legacyExists: fs.existsSync(LEGACY_DATA_FILE),
+    rootListing: safeList('/').slice(0, 30)
+  });
+});
+
 // Public status check — no auth required, no secrets exposed
 app.get('/api/plaid/status', (req, res) => {
   res.json({
