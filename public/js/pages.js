@@ -1384,7 +1384,8 @@ const Pages = (() => {
 
       inputEl.addEventListener('input', () => {
         inputEl.style.height = 'auto';
-        inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+        const cap = window.innerWidth <= 768 ? 100 : 120;
+        inputEl.style.height = Math.min(inputEl.scrollHeight, cap) + 'px';
       });
 
       // ── Dictation ──
