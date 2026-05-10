@@ -14,12 +14,44 @@ const DB = (() => {
         _data = saved;
         migrate();
       } else {
-        _data = JSON.parse(JSON.stringify(SEED_DATA));
+        _data = createBlankData();
         await save();
       }
     } catch (e) {
-      _data = JSON.parse(JSON.stringify(SEED_DATA));
+      window.location.href = '/login.html';
     }
+  }
+
+  function createBlankData() {
+    const year = String(new Date().getFullYear());
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const blankMonth = () => ({
+      income: [],
+      fixedExpenses: [],
+      variableExpenses: [],
+      debt: [],
+      savings: [],
+      summary: { startingBalance: 0, totalIncome: 0, totalExpenses: 0, debtPayments: 0, savingsContributions: 0, netCashFlow: 0, endingBalance: 0 }
+    });
+    return {
+      settings: {
+        householdName: "My Budget",
+        users: [
+          { id: "person1", name: "", username: "", role: "Primary", color: "#7c6ef8", passwordHash: "" },
+          { id: "person2", name: "", username: "", role: "Partner", color: "#f4b942", passwordHash: "" }
+        ],
+        aiProvider: "claude",
+        aiApiKey: "",
+        openaiApiKey: "",
+        accounts: ["Checking", "Savings", "Credit Card", "Cash"],
+        incomeCategories: ["Salary", "Business", "Freelance", "Gifts", "Refunds", "Other Income"],
+        fixedCategories: ["Rent", "Mortgage", "Utilities", "Phone", "Internet", "Insurance", "Subscriptions", "Other Fixed"],
+        variableCategories: ["Groceries", "Eating Out", "Gas", "Shopping", "Personal Care", "Medical / Health", "Travel", "Entertainment", "Other"],
+        debtCategories: ["Credit Card", "Student Loan", "Car Loan", "Medical Bills", "Other Debt"],
+        savingsCategories: ["Emergency Fund", "Home Fund", "Vacation", "Investments", "Other Savings"]
+      },
+      data: { [year]: { annualTotals: null, months: Object.fromEntries(months.map(m => [m, blankMonth()])) } }
+    };
   }
 
   function migrate() {

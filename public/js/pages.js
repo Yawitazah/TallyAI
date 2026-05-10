@@ -1172,7 +1172,14 @@ const Pages = (() => {
             const res = await fetch('/api/set-password', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: cfg.users[idx]?.id, password })
+              body: JSON.stringify({
+                userId: cfg.users[idx]?.id,
+                username,
+                password,
+                name: cfg.users[idx]?.name,
+                role: cfg.users[idx]?.role,
+                color: cfg.users[idx]?.color
+              })
             });
             if (!res.ok) { showToast('Failed to save password', 'error'); return; }
           }

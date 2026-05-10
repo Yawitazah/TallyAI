@@ -8,7 +8,28 @@ const { exec } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3141;
-const DATA_FILE = path.join(__dirname, 'data.json');
+const DEFAULT_DATA_DIR = fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
+const LEGACY_DATA_FILE = path.join(__dirname, 'data.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function readJson(file, fallback = null) {
+  if (!fs.existsSync(file)) return fallback;
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+}
+
+function writeJson(file, data) {
+  ensureDataDir();
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function userDataFile(userId) {
+  return path.join(DATA_DIR, `user-${userId}.json`);
+}
 
 app.use(express.json({ limit: '50mb' }));
 app.use(session({
@@ -23,9 +44,130 @@ function hashPin(pin) {
   return crypto.createHash('sha256').update(pin + 'tally-pin-salt').digest('hex');
 }
 
-function readData() {
-  if (!fs.existsSync(DATA_FILE)) return null;
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return null; }
+function makeId() {
+  return crypto.randomBytes(12).toString('hex');
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  const { passwordHash, ...safe } = user;
+  return safe;
+}
+
+function defaultSettings(user = {}) {
+  return {
+    householdName: user.householdName || `${user.name || user.username || 'My'} Budget`,
+    users: [
+      {
+        id: user.id || 'person1',
+        name: user.name || user.username || '',
+        username: user.username || '',
+        role: 'Primary',
+        color: user.color || '#7c6ef8',
+        passwordHash: ''
+      },
+      {
+        id: 'person2',
+        name: '',
+        username: '',
+        role: 'Partner',
+        color: '#f4b942',
+        passwordHash: ''
+      }
+    ],
+    aiProvider: 'claude',
+    aiApiKey: '',
+    openaiApiKey: '',
+    accounts: ['Checking', 'Savings', 'Credit Card', 'Cash'],
+    incomeCategories: ['Salary', 'Business', 'Freelance', 'Gifts', 'Refunds', 'Other Income'],
+    fixedCategories: ['Rent', 'Mortgage', 'Utilities', 'Phone', 'Internet', 'Insurance', 'Subscriptions', 'Other Fixed'],
+    variableCategories: ['Groceries', 'Eating Out', 'Gas', 'Shopping', 'Personal Care', 'Medical / Health', 'Travel', 'Entertainment', 'Other'],
+    debtCategories: ['Credit Card', 'Student Loan', 'Car Loan', 'Medical Bills', 'Other Debt'],
+    savingsCategories: ['Emergency Fund', 'Home Fund', 'Vacation', 'Investments', 'Other Savings']
+  };
+}
+
+function blankMonth() {
+  return {
+    income: [],
+    fixedExpenses: [],
+    variableExpenses: [],
+    debt: [],
+    savings: [],
+    summary: {
+      startingBalance: 0,
+      totalIncome: 0,
+      totalExpenses: 0,
+      debtPayments: 0,
+      savingsContributions: 0,
+      netCashFlow: 0,
+      endingBalance: 0
+    }
+  };
+}
+
+function createBlankData(user = {}) {
+  const year = String(new Date().getFullYear());
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return {
+    settings: defaultSettings(user),
+    data: {
+      [year]: {
+        annualTotals: null,
+        months: Object.fromEntries(months.map(month => [month, blankMonth()]))
+      }
+    }
+  };
+}
+
+function readUsers() {
+  return readJson(USERS_FILE, []);
+}
+
+function saveUsers(users) {
+  writeJson(USERS_FILE, users);
+}
+
+function readUserData(userId) {
+  return readJson(userDataFile(userId), null);
+}
+
+function saveUserData(userId, data) {
+  writeJson(userDataFile(userId), data);
+}
+
+function ensureUserData(user) {
+  let data = readUserData(user.id);
+  if (!data) {
+    data = createBlankData(user);
+    saveUserData(user.id, data);
+  }
+  return data;
+}
+
+function migrateLegacyDataIfNeeded() {
+  ensureDataDir();
+  const users = readUsers();
+  if (users.length || !fs.existsSync(LEGACY_DATA_FILE)) return users;
+
+  const legacy = readJson(LEGACY_DATA_FILE, null);
+  const legacyUsers = legacy?.settings?.users || [];
+  const configured = legacyUsers.filter(u => u.username);
+  const migratedUsers = (configured.length ? configured : [{ username: 'admin', name: 'Primary', role: 'Primary', color: '#7c6ef8', passwordHash: '' }]).map((u, idx) => ({
+    id: u.id || makeId(),
+    username: u.username || (idx === 0 ? 'admin' : `user${idx + 1}`),
+    name: u.name || u.role || u.username || `User ${idx + 1}`,
+    color: u.color || (idx === 0 ? '#7c6ef8' : '#f4b942'),
+    role: u.role || 'Primary',
+    passwordHash: u.passwordHash || ''
+  }));
+
+  saveUsers(migratedUsers);
+  if (legacy) {
+    saveUserData(migratedUsers[0].id, legacy);
+    for (const user of migratedUsers.slice(1)) saveUserData(user.id, createBlankData(user));
+  }
+  return migratedUsers;
 }
 
 function requireAuth(req, res, next) {
@@ -46,37 +188,41 @@ app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
 
-  const data = readData();
-  const users = data?.settings?.users || [];
+  const normalizedUsername = username.trim().toLowerCase();
+  const users = migrateLegacyDataIfNeeded();
+  let user = users.find(u => u.username && u.username.toLowerCase() === normalizedUsername);
+  let created = false;
 
   // First-run: no users have credentials set yet → let anyone in as person1
-  const anyConfigured = users.some(u => u.username);
-  if (!anyConfigured) {
-    const first = users[0] || { id: 'person1', name: '', role: 'Primary', color: '#7c6ef8' };
-    first.username = username;
-    first.passwordHash = hashPin(password);
-    if (data) fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-    req.session.userId = first.id;
-    req.session.userName = first.name || first.role;
-    req.session.userColor = first.color;
-    return res.json({ success: true, firstRun: true, user: first });
+  if (!user) {
+    user = {
+      id: makeId(),
+      username: username.trim(),
+      name: username.trim(),
+      color: '#7c6ef8',
+      role: 'Primary',
+      passwordHash: hashPin(password)
+    };
+    users.push(user);
+    saveUsers(users);
+    saveUserData(user.id, createBlankData(user));
+    created = true;
   }
 
-  const user = users.find(u => u.username && u.username.toLowerCase() === username.toLowerCase());
   if (!user) return res.status(401).json({ error: 'Invalid username or password.' });
 
   // Password not yet set for this user — first login sets it
   if (!user.passwordHash) {
     user.passwordHash = hashPin(password);
-    if (data) fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    saveUsers(users);
   } else if (user.passwordHash !== hashPin(password)) {
     return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
   req.session.userId = user.id;
-  req.session.userName = user.name || user.role;
+  req.session.userName = user.name || user.username || user.role;
   req.session.userColor = user.color;
-  res.json({ success: true, user: { id: user.id, name: user.name, color: user.color, role: user.role } });
+  res.json({ success: true, created, user: publicUser(user) });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -85,13 +231,15 @@ app.post('/api/logout', (req, res) => {
 
 // ── Data API (protected) ──
 app.get('/api/data', requireAuth, (req, res) => {
-  const data = readData();
-  res.json(data || null);
+  const users = migrateLegacyDataIfNeeded();
+  const user = users.find(u => u.id === req.session.userId) || { id: req.session.userId, username: req.session.userName };
+  const data = ensureUserData(user);
+  res.json(data);
 });
 
 app.post('/api/data', requireAuth, (req, res) => {
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(req.body, null, 2));
+    saveUserData(req.session.userId, req.body);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -100,14 +248,39 @@ app.post('/api/data', requireAuth, (req, res) => {
 
 // ── Set password (protected) ──
 app.post('/api/set-password', requireAuth, (req, res) => {
-  const { userId, password } = req.body;
-  const data = readData();
-  if (!data) return res.status(500).json({ error: 'No data' });
-  const user = (data.settings.users || []).find(u => u.id === userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  user.passwordHash = password ? hashPin(password) : '';
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  res.json({ success: true });
+  const { userId, password, username, name, role, color } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+  const data = ensureUserData({ id: req.session.userId, username: req.session.userName });
+  const profile = (data.settings.users || []).find(u => u.id === userId);
+  const nextUsername = String(username || profile?.username || '').trim();
+  if (!nextUsername) return res.status(400).json({ error: 'Username is required' });
+
+  const users = migrateLegacyDataIfNeeded();
+  let user = users.find(u => u.id === userId);
+  const duplicate = users.find(u => u.id !== userId && u.username.toLowerCase() === nextUsername.toLowerCase());
+  if (duplicate) return res.status(409).json({ error: 'That username is already taken' });
+
+  if (!user) {
+    user = {
+      id: userId,
+      username: nextUsername,
+      name: name || profile?.name || nextUsername,
+      role: role || profile?.role || 'Primary',
+      color: color || profile?.color || '#7c6ef8',
+      passwordHash: ''
+    };
+    users.push(user);
+    saveUserData(user.id, createBlankData(user));
+  }
+
+  user.username = nextUsername;
+  user.name = name || profile?.name || user.name || nextUsername;
+  user.role = role || profile?.role || user.role || 'Primary';
+  user.color = color || profile?.color || user.color || '#7c6ef8';
+  if (password) user.passwordHash = hashPin(password);
+  saveUsers(users);
+  res.json({ success: true, user: publicUser(user) });
 });
 
 // ── AI Chat (protected, dual provider) ──
@@ -216,5 +389,7 @@ app.listen(PORT, () => {
   console.log('║       TALLY AI is running!         ║');
   console.log(`║   http://localhost:${PORT}          ║`);
   console.log('╚════════════════════════════════════╝\n');
-  if (process.platform === 'win32') setTimeout(() => exec(`start http://localhost:${PORT}`), 500);
+  if (process.platform === 'win32' && process.env.AUTO_OPEN_BROWSER !== 'false') {
+    setTimeout(() => exec(`start http://localhost:${PORT}`), 500);
+  }
 });
