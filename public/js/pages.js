@@ -1,4 +1,4 @@
-// Tally AI — Page Renderers
+﻿// Tally AI — Page Renderers
 const Pages = (() => {
 
   // ===== DASHBOARD =====
@@ -43,6 +43,26 @@ const Pages = (() => {
 
     chartsGrid.append(barCard, donutCard);
 
+    const dataMonths = yearMonths.filter(m => m.data?.summary?.totalIncome > 0);
+    const currentMonthIndex = dataMonths.findIndex(m => m.name === month);
+    const previousIncome = currentMonthIndex > 0 ? (dataMonths[currentMonthIndex - 1]?.data?.summary?.totalIncome || 0) : 0;
+    const trendPct = previousIncome ? ((income - previousIncome) / previousIncome) * 100 : 0;
+    const trendPositive = trendPct >= 0;
+    const ytdIncome = dataMonths.reduce((sum, m) => sum + (m.data?.summary?.totalIncome || 0), 0);
+    const flowCard = el('div', 'chart-card cash-flow-glow-card');
+    flowCard.innerHTML = `
+      <div class="cfg-top">
+        <div class="cfg-title">Cash Flow Glow</div>
+        <button class="cfg-select" type="button">This Month <span>⌄</span></button>
+      </div>
+      <div class="cfg-metric">
+        <span class="cfg-value">${fmt(income || ytdIncome)}</span>
+        <span class="cfg-trend ${trendPositive ? 'up' : 'down'}">${trendPositive ? '▲' : '▼'} ${Math.abs(trendPct).toFixed(1)}%</span>
+        <span class="cfg-trend-copy">vs last month</span>
+      </div>
+      <div class="cfg-chart-wrap"><canvas id="chart-flow"></canvas></div>`;
+    chartsGrid.appendChild(flowCard);
+
     // Bottom: upcoming bills + top categories
     const bottomGrid = el('div', 'bottom-grid');
 
@@ -83,6 +103,7 @@ const Pages = (() => {
     setTimeout(() => {
       Charts.incomeVsExpenses('chart-bar', yearMonths);
       Charts.expenseBreakdown('chart-donut', monthData);
+      Charts.netFlow('chart-flow', yearMonths, monthData, month);
       Charts.categorySpend('chart-var', monthData || {}, 'variableExpenses');
     }, 50);
 
@@ -404,7 +425,7 @@ const Pages = (() => {
       c3.className = 'li-actual text-success'; c3.innerHTML = `${fmt(item.contribution||0)} <span class="text-muted" style="font-size:0.7rem">/mo</span>`;
     }
 
-    const editBtn = el('button', 'li-edit-btn', '✏ Edit');
+    const editBtn = el('button', 'li-edit-btn', 'âœ Edit');
     editBtn.onclick = (e) => { e.stopPropagation(); openEditModal(year, month, section, idx, item); };
 
     row.appendChild(mainDiv);
@@ -679,7 +700,7 @@ const Pages = (() => {
     // Snowball order tip
     const tip = el('div', 'section-card mt-24');
     tip.innerHTML = `
-      <div class="section-header open" style="cursor:default"><div class="section-title-row"><span class="section-dot debt"></span><span class="section-title">❄ Debt Snowball Order (Smallest → Largest)</span></div></div>
+      <div class="section-header open" style="cursor:default"><div class="section-title-row"><span class="section-dot debt"></span><span class="section-title">â„ Debt Snowball Order (Smallest → Largest)</span></div></div>
       <div class="section-body open">
         <ul class="line-items">
           ${sorted.map((d,i) => `<li class="line-item" style="grid-template-columns:2rem 1fr auto auto">
@@ -1213,6 +1234,7 @@ const Pages = (() => {
       { id: 'person2', name: '', role: 'Partner', color: '#f4b942', pinHash: '' }
     ];
     if (!s.aiProvider) s.aiProvider = 'claude';
+    const lux = App.luxuryTuning || { transparency: 76, smoke: 10, glow: 42, hue: 12, saturation: 62, animation: 55 };
 
     const u0 = s.users[0] || {};
     const u1 = s.users[1] || {};
@@ -1316,6 +1338,93 @@ const Pages = (() => {
       </div>
 
       <div class="settings-section">
+        <div class="settings-title">Appearance</div>
+        <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:14px">
+          <div><div class="settings-key">Dashboard Theme</div><div class="settings-desc">Classic keeps the original dark dashboard, Blush restores the softer rose-gold look, and Luxury uses transparent smoked glass with stronger glow.</div></div>
+          <div class="theme-choice-group">
+            <button class="theme-choice ${App.currentTheme === 'classic' ? 'active' : ''}" data-theme="classic" type="button">
+              <span class="theme-swatch classic"></span>
+              <span>Classic</span>
+            </button>
+            <button class="theme-choice ${App.currentTheme === 'blush' ? 'active' : ''}" data-theme="blush" type="button">
+              <span class="theme-swatch blush"></span>
+              <span>Blush</span>
+            </button>
+            <button class="theme-choice ${App.currentTheme === 'luxury' ? 'active' : ''}" data-theme="luxury" type="button">
+              <span class="theme-swatch luxury"></span>
+              <span>Luxury</span>
+            </button>
+          </div>
+          <div class="lux-tabs" role="tablist" aria-label="Luxury theme controls">
+            <button class="lux-tab active" data-lux-tab="theme" type="button">Theme</button>
+            <button class="lux-tab" data-lux-tab="tune" type="button">Luxury Lab</button>
+          </div>
+          <div class="lux-panel active" data-lux-panel="theme">
+            <div class="settings-desc">Use the top switch for quick cycling, or open Luxury Lab to dial in the exact glass, glow, and graph palette before saving.</div>
+          </div>
+          <div class="lux-panel" data-lux-panel="tune">
+            <div class="lux-control-grid">
+              <label class="lux-control"><span>Glass transparency <strong data-lux-value="transparency">${lux.transparency}</strong></span><input type="range" min="0" max="100" value="${lux.transparency}" data-lux-control="transparency"></label>
+              <label class="lux-control"><span>Smokiness <strong data-lux-value="smoke">${lux.smoke}</strong></span><input type="range" min="0" max="55" value="${lux.smoke}" data-lux-control="smoke"></label>
+              <label class="lux-control"><span>Border glow <strong data-lux-value="glow">${lux.glow}</strong></span><input type="range" min="0" max="100" value="${lux.glow}" data-lux-control="glow"></label>
+              <label class="lux-control"><span>Graph hue <strong data-lux-value="hue">${lux.hue}</strong></span><input type="range" min="-45" max="45" value="${lux.hue}" data-lux-control="hue"></label>
+              <label class="lux-control"><span>Graph saturation <strong data-lux-value="saturation">${lux.saturation}</strong></span><input type="range" min="30" max="95" value="${lux.saturation}" data-lux-control="saturation"></label>
+              <label class="lux-control"><span>Aura motion <strong data-lux-value="animation">${lux.animation}</strong></span><input type="range" min="0" max="100" value="${lux.animation}" data-lux-control="animation"></label>
+              <label class="lux-control"><span>Particle drift <strong data-lux-value="particleSpeed">${lux.particleSpeed}</strong></span><input type="range" min="0" max="100" value="${lux.particleSpeed}" data-lux-control="particleSpeed"></label>
+              <label class="lux-control"><span>Graph top glow <strong data-lux-value="graphGlow">${lux.graphGlow}</strong></span><input type="range" min="0" max="100" value="${lux.graphGlow}" data-lux-control="graphGlow"></label>
+              <label class="lux-control"><span>Graph gradient <strong data-lux-value="graphGradient">${lux.graphGradient}</strong></span><input type="range" min="0" max="100" value="${lux.graphGradient}" data-lux-control="graphGradient"></label>
+              <label class="lux-control"><span>Gradient midpoint <strong data-lux-value="gradientMidpoint">${lux.gradientMidpoint}</strong></span><input type="range" min="10" max="90" value="${lux.gradientMidpoint}" data-lux-control="gradientMidpoint"></label>
+            </div>
+            <div class="lux-gradient-lab">
+              <div class="gradient-builder" data-gradient-builder="income" style="--g-top:${lux.incomeTop};--g-mid:${lux.incomeMid};--g-bottom:${lux.incomeBottom};--g-midpoint:${lux.gradientMidpoint}%">
+                <div class="gradient-builder-head"><span>Income Gradient</span><strong data-lux-value="gradientMidpoint">${lux.gradientMidpoint}</strong></div>
+                <div class="gradient-track" data-gradient-track="income">
+                  <label class="gradient-handle top" style="left:0%" title="Income top"><input type="color" value="${lux.incomeTop}" data-lux-color="incomeTop"><span></span></label>
+                  <label class="gradient-handle mid" style="left:${lux.gradientMidpoint}%" title="Income middle" data-gradient-midpoint><input type="color" value="${lux.incomeMid}" data-lux-color="incomeMid"><span></span></label>
+                  <label class="gradient-handle bottom" style="left:100%" title="Income bottom"><input type="color" value="${lux.incomeBottom}" data-lux-color="incomeBottom"><span></span></label>
+                </div>
+              </div>
+              <div class="gradient-builder" data-gradient-builder="expense" style="--g-top:${lux.expenseTop};--g-mid:${lux.expenseMid};--g-bottom:${lux.expenseBottom};--g-midpoint:${lux.gradientMidpoint}%">
+                <div class="gradient-builder-head"><span>Expense Gradient</span><strong data-lux-value="gradientMidpoint">${lux.gradientMidpoint}</strong></div>
+                <div class="gradient-track" data-gradient-track="expense">
+                  <label class="gradient-handle top" style="left:0%" title="Expense top"><input type="color" value="${lux.expenseTop}" data-lux-color="expenseTop"><span></span></label>
+                  <label class="gradient-handle mid" style="left:${lux.gradientMidpoint}%" title="Expense middle" data-gradient-midpoint><input type="color" value="${lux.expenseMid}" data-lux-color="expenseMid"><span></span></label>
+                  <label class="gradient-handle bottom" style="left:100%" title="Expense bottom"><input type="color" value="${lux.expenseBottom}" data-lux-color="expenseBottom"><span></span></label>
+                </div>
+              </div>
+              <div class="gradient-builder" data-gradient-builder="line" style="--g-top:${lux.lineTop};--g-mid:${lux.lineMid};--g-bottom:${lux.lineBottom};--g-midpoint:${lux.gradientMidpoint}%">
+                <div class="gradient-builder-head"><span>Line Gradient</span><strong data-lux-value="gradientMidpoint">${lux.gradientMidpoint}</strong></div>
+                <div class="gradient-track" data-gradient-track="line">
+                  <label class="gradient-handle top" style="left:0%" title="Line top"><input type="color" value="${lux.lineTop}" data-lux-color="lineTop"><span></span></label>
+                  <label class="gradient-handle mid" style="left:${lux.gradientMidpoint}%" title="Line middle" data-gradient-midpoint><input type="color" value="${lux.lineMid}" data-lux-color="lineMid"><span></span></label>
+                  <label class="gradient-handle bottom" style="left:100%" title="Line bottom"><input type="color" value="${lux.lineBottom}" data-lux-color="lineBottom"><span></span></label>
+                </div>
+              </div>
+            </div>
+            <div class="lux-preview-card">
+              <div class="lux-preview-top">
+                <div>
+                  <div class="lux-preview-label">Live Preview</div>
+                  <div class="lux-preview-value">$2,660.27</div>
+                </div>
+                <div class="lux-preview-orb"></div>
+              </div>
+              <div class="lux-preview-bars" aria-hidden="true">
+                <span style="--h:46%"></span>
+                <span style="--h:72%"></span>
+                <span style="--h:56%"></span>
+                <span style="--h:86%"></span>
+                <span style="--h:64%"></span>
+              </div>
+            </div>
+            <div class="lux-actions">
+              <button class="btn btn-primary" id="lux-save" type="button">Save Luxury Look</button>
+              <button class="btn btn-ghost" id="lux-reset" type="button">Reset Luxury</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
         <div class="settings-title">AI Advisor</div>
         <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:12px">
           <div><div class="settings-key">AI Provider</div><div class="settings-desc">Choose which AI powers your financial advisor — both work great, ChatGPT costs less per message</div></div>
@@ -1358,6 +1467,74 @@ const Pages = (() => {
 
     setTimeout(() => {
       // Provider tabs
+      div.querySelectorAll('.theme-choice').forEach(btn => {
+        btn.onclick = () => App.applyTheme(btn.dataset.theme, true);
+      });
+      div.querySelectorAll('.lux-tab').forEach(btn => {
+        btn.onclick = () => {
+          const target = btn.dataset.luxTab;
+          div.querySelectorAll('.lux-tab').forEach(tab => tab.classList.toggle('active', tab === btn));
+          div.querySelectorAll('.lux-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.luxPanel === target));
+        };
+      });
+
+      div.querySelectorAll('[data-lux-control]').forEach(input => {
+        const handleLuxuryDial = () => {
+          if (App.currentTheme !== 'luxury') App.applyTheme('luxury', true);
+          const key = input.dataset.luxControl;
+          const rerenderCharts = ['hue', 'saturation', 'graphGlow', 'graphGradient', 'gradientMidpoint'].includes(key) && App.currentPage !== 'settings';
+          requestAnimationFrame(() => App.updateLuxuryTuning({ [key]: Number(input.value) }, rerenderCharts));
+        };
+        input.oninput = handleLuxuryDial;
+        input.onchange = handleLuxuryDial;
+      });
+
+
+      div.querySelectorAll('[data-lux-color]').forEach(input => {
+        const handleLuxuryColor = () => {
+          if (App.currentTheme !== 'luxury') App.applyTheme('luxury', true);
+          const key = input.dataset.luxColor;
+          requestAnimationFrame(() => App.updateLuxuryTuning({ [key]: input.value }, App.currentPage !== 'settings'));
+        };
+        input.oninput = handleLuxuryColor;
+        input.onchange = handleLuxuryColor;
+      });
+
+      div.querySelectorAll('[data-gradient-track]').forEach(track => {
+        const moveMidpoint = clientX => {
+          const rect = track.getBoundingClientRect();
+          const pct = Math.max(10, Math.min(90, Math.round(((clientX - rect.left) / rect.width) * 100)));
+          div.querySelectorAll('[data-gradient-midpoint]').forEach(handle => { handle.style.left = pct + '%'; });
+          div.querySelectorAll('.gradient-builder').forEach(builder => { builder.style.setProperty('--g-midpoint', pct + '%'); });
+          requestAnimationFrame(() => App.updateLuxuryTuning({ gradientMidpoint: pct }, App.currentPage !== 'settings'));
+        };
+        track.onclick = e => {
+          if (e.target.closest('input[type="color"]')) return;
+          moveMidpoint(e.clientX);
+        };
+        track.querySelectorAll('[data-gradient-midpoint]').forEach(handle => {
+          handle.onpointerdown = e => {
+            if (e.target.matches('input[type="color"]')) return;
+            e.preventDefault();
+            handle.setPointerCapture(e.pointerId);
+            moveMidpoint(e.clientX);
+            handle.onpointermove = moveEvent => moveMidpoint(moveEvent.clientX);
+            handle.onpointerup = () => { handle.onpointermove = null; handle.onpointerup = null; };
+          };
+        });
+      });
+      const luxSave = document.getElementById('lux-save');
+      if (luxSave) luxSave.onclick = () => {
+        App.saveLuxuryTuning();
+        showToast('Luxury look saved!');
+      };
+
+      const luxReset = document.getElementById('lux-reset');
+      if (luxReset) luxReset.onclick = () => {
+        App.resetLuxuryTuning(true);
+        showToast('Luxury look reset');
+      };
+
       document.getElementById('tab-claude').onclick = (e) => {
         document.getElementById('tab-claude').classList.add('active');
         document.getElementById('tab-openai').classList.remove('active');
@@ -1450,6 +1627,7 @@ const Pages = (() => {
           cfg.users[idx].username = document.getElementById(`s-u${idx}-username`).value.trim();
         });
         cfg.aiProvider   = document.getElementById('tab-openai').classList.contains('active') ? 'openai' : 'claude';
+        cfg.theme        = App.currentTheme;
         cfg.aiApiKey     = document.getElementById('s-claude-key').value.trim();
         cfg.openaiApiKey = document.getElementById('s-openai-key').value.trim();
         const hhEl = document.getElementById('household-name');
@@ -1702,7 +1880,7 @@ const Pages = (() => {
           <div class="advisor-avatar">✦</div>
           <div class="advisor-info">
             <div class="advisor-name">Tally &mdash; AI Financial Advisor</div>
-            <div class="${hasKey ? 'advisor-status' : 'advisor-no-key'}">${hasKey ? `● Online &mdash; Powered by ${provider === 'openai' ? 'ChatGPT (OpenAI)' : 'Claude (Anthropic)'}` : '⚠ No API key set &mdash; go to Settings to connect Claude or ChatGPT'}</div>
+            <div class="${hasKey ? 'advisor-status' : 'advisor-no-key'}">${hasKey ? `â— Online &mdash; Powered by ${provider === 'openai' ? 'ChatGPT (OpenAI)' : 'Claude (Anthropic)'}` : '⚠ No API key set &mdash; go to Settings to connect Claude or ChatGPT'}</div>
           </div>
         </div>
 
@@ -1991,3 +2169,5 @@ const Pages = (() => {
 
   return { dashboard, monthly, yearly, goals, debt, bills, importPage, advisor, settings, openAddModal, closeAddModal, getBillsForMonth };
 })();
+
+

@@ -9,7 +9,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Tally AI — Smart Financial Management</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <script>
+    (() => {
+      let theme = localStorage.getItem('tally-theme') || 'classic';
+      if (theme === 'luxe') theme = 'luxury';
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <link rel="stylesheet" href="/css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -97,6 +104,10 @@
           </div>
           <button class="month-nav" id="next-month">›</button>
         </div>
+        <button class="theme-toggle" id="theme-toggle" title="Switch theme" type="button">
+          <span class="theme-toggle-icon">L</span>
+          <span class="theme-toggle-label">Luxury</span>
+        </button>
         <button class="voice-btn" id="voice-btn" title="Voice Entry">
           <span class="mic-icon">🎤</span>
           <span class="voice-label">Voice Entry</span>

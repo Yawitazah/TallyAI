@@ -4,7 +4,232 @@ const App = (() => {
   let currentMonth = MONTHS[new Date().getMonth()];
   let currentPage = 'dashboard';
   let currentUser = null;
+  let currentTheme = localStorage.getItem('tally-theme') || 'classic';
 
+  const themes = ['classic', 'blush', 'luxury'];
+  const themeMeta = {
+    classic: { label: 'Classic', icon: 'C', color: '#1a1a2e' },
+    blush: { label: 'Blush', icon: 'B', color: '#f7ebe5' },
+    luxury: { label: 'Luxury', icon: 'L', color: '#fff8f5' }
+  };
+  if (currentTheme === 'luxe') currentTheme = 'luxury';
+
+  function normalizeTheme(theme) {
+    if (theme === 'luxe') return 'luxury';
+    return themes.includes(theme) ? theme : 'classic';
+  }
+
+  function nextTheme(theme) {
+    const idx = themes.indexOf(normalizeTheme(theme));
+    return themes[(idx + 1) % themes.length];
+  }
+
+  function applyTheme(theme, rerender = false) {
+    currentTheme = normalizeTheme(theme);
+    document.documentElement.dataset.theme = currentTheme;
+    localStorage.setItem('tally-theme', currentTheme);
+
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = themeMeta[currentTheme].color;
+
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+      const label = toggle.querySelector('.theme-toggle-label');
+      const icon = toggle.querySelector('.theme-toggle-icon');
+      toggle.classList.toggle('active', currentTheme !== 'classic');
+      toggle.setAttribute('aria-pressed', currentTheme !== 'classic' ? 'true' : 'false');
+      toggle.title = `Theme: ${themeMeta[currentTheme].label}. Click to switch.`;
+      if (label) label.textContent = themeMeta[currentTheme].label;
+      if (icon) icon.textContent = themeMeta[currentTheme].icon;
+    }
+
+    document.querySelectorAll('.theme-choice').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.theme === currentTheme);
+    });
+
+    if (rerender) render();
+  }
+  const luxuryTuningVersion = 5;
+  const defaultLuxuryTuning = {
+    version: luxuryTuningVersion,
+    transparency: 100,
+    smoke: 17,
+    glow: 100,
+    hue: 12,
+    saturation: 62,
+    animation: 94,
+    particleSpeed: 82,
+    graphGlow: 100,
+    graphGradient: 85,
+    colorIncome: '#dc685d',
+    colorExpense: '#e56285',
+    colorLine: '#ffd7bf',
+    colorHighlight: '#fffdf8',
+    colorGlow: '#ffd7bf',
+    colorChampagne: '#dfc990',
+    colorBerry: '#de4a79',
+    incomeTop: '#fffaf6',
+    incomeMid: '#dc685d',
+    incomeBottom: '#d75a52',
+    expenseTop: '#ffffff',
+    expenseMid: '#e56285',
+    expenseBottom: '#de4a79',
+    lineTop: '#fffdf8',
+    lineMid: '#ffd7bf',
+    lineBottom: '#d8a27f',
+    gradientMidpoint: 63
+  };
+  let luxuryTuning = loadLuxuryTuning();
+  let luxuryRenderTimer = null;
+
+  function loadLuxuryTuning() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('tally-luxury-tuning') || '{}');
+      if (saved.version !== luxuryTuningVersion) return { ...defaultLuxuryTuning };
+      return { ...defaultLuxuryTuning, ...saved };
+    } catch {
+      return { ...defaultLuxuryTuning };
+    }
+  }
+
+  function clampNum(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function normalizeHex(value, fallback) {
+    const v = String(value || '').trim();
+    return /^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback;
+  }
+
+  function normalizedLuxuryTuning(next = luxuryTuning) {
+    return {
+      version: luxuryTuningVersion,
+      transparency: clampNum(next.transparency, 0, 100, defaultLuxuryTuning.transparency),
+      smoke: clampNum(next.smoke, 0, 55, defaultLuxuryTuning.smoke),
+      glow: clampNum(next.glow, 0, 100, defaultLuxuryTuning.glow),
+      hue: clampNum(next.hue, -45, 45, defaultLuxuryTuning.hue),
+      saturation: clampNum(next.saturation, 30, 95, defaultLuxuryTuning.saturation),
+      animation: clampNum(next.animation, 0, 100, defaultLuxuryTuning.animation),
+      particleSpeed: clampNum(next.particleSpeed, 0, 100, defaultLuxuryTuning.particleSpeed),
+      graphGlow: clampNum(next.graphGlow, 0, 100, defaultLuxuryTuning.graphGlow),
+      graphGradient: clampNum(next.graphGradient, 0, 100, defaultLuxuryTuning.graphGradient),
+      colorIncome: normalizeHex(next.colorIncome, defaultLuxuryTuning.colorIncome),
+      colorExpense: normalizeHex(next.colorExpense, defaultLuxuryTuning.colorExpense),
+      colorLine: normalizeHex(next.colorLine, defaultLuxuryTuning.colorLine),
+      colorHighlight: normalizeHex(next.colorHighlight, defaultLuxuryTuning.colorHighlight),
+      colorGlow: normalizeHex(next.colorGlow, defaultLuxuryTuning.colorGlow),
+      colorChampagne: normalizeHex(next.colorChampagne, defaultLuxuryTuning.colorChampagne),
+      colorBerry: normalizeHex(next.colorBerry, defaultLuxuryTuning.colorBerry),
+      incomeTop: normalizeHex(next.incomeTop, defaultLuxuryTuning.incomeTop),
+      incomeMid: normalizeHex(next.incomeMid, defaultLuxuryTuning.incomeMid),
+      incomeBottom: normalizeHex(next.incomeBottom, defaultLuxuryTuning.incomeBottom),
+      expenseTop: normalizeHex(next.expenseTop, defaultLuxuryTuning.expenseTop),
+      expenseMid: normalizeHex(next.expenseMid, defaultLuxuryTuning.expenseMid),
+      expenseBottom: normalizeHex(next.expenseBottom, defaultLuxuryTuning.expenseBottom),
+      lineTop: normalizeHex(next.lineTop, defaultLuxuryTuning.lineTop),
+      lineMid: normalizeHex(next.lineMid, defaultLuxuryTuning.lineMid),
+      lineBottom: normalizeHex(next.lineBottom, defaultLuxuryTuning.lineBottom),
+      gradientMidpoint: clampNum(next.gradientMidpoint, 10, 90, defaultLuxuryTuning.gradientMidpoint)
+    };
+  }
+
+  function applyLuxuryTuning(next = luxuryTuning, rerenderCharts = false) {
+    luxuryTuning = normalizedLuxuryTuning(next);
+    const root = document.documentElement;
+    const glassOpacity = (100 - luxuryTuning.transparency) / 100;
+    const glassAlpha = glassOpacity.toFixed(2);
+    const smokeAlpha = (luxuryTuning.smoke / 100).toFixed(2);
+    const backdropBlur = Math.min(26, glassOpacity * 75).toFixed(1) + 'px';
+    const surfaceShineAlpha = (glassOpacity * (0.22 + luxuryTuning.glow / 260)).toFixed(2);
+    const hoverGlassAlpha = Math.min(1, glassOpacity + (glassOpacity > 0 ? 0.04 : 0)).toFixed(2);
+    const glowAlpha = (luxuryTuning.glow / 100).toFixed(2);
+    const glowSoft = (0.06 + luxuryTuning.glow / 260).toFixed(2);
+    const glowBorder = (0.24 + luxuryTuning.glow / 150).toFixed(2);
+    const shineAlpha = (0.34 + luxuryTuning.glow / 180).toFixed(2);
+    const shineSoft = (0.18 + luxuryTuning.glow / 320).toFixed(2);
+    const shineBeam = (0.16 + luxuryTuning.glow / 340).toFixed(2);
+    const shineVeil = (0.12 + luxuryTuning.glow / 420).toFixed(2);
+    const sparkleAlpha = (0.12 + luxuryTuning.glow / 155).toFixed(2);
+    const smokeSoft = (luxuryTuning.smoke / 125).toFixed(2);
+    const animSeconds = (12 - (luxuryTuning.animation / 100) * 8).toFixed(1) + 's';
+    const shineSeconds = (18 - (luxuryTuning.particleSpeed / 100) * 9).toFixed(1) + 's';
+    const particleDrift = (16 - (luxuryTuning.particleSpeed / 100) * 7).toFixed(1) + 's';
+    const graphGlow = (luxuryTuning.graphGlow / 100).toFixed(2);
+    const graphGradient = (luxuryTuning.graphGradient / 100).toFixed(2);
+
+    root.style.setProperty('--lux-glass-alpha', glassAlpha);
+    root.style.setProperty('--lux-hover-glass-alpha', hoverGlassAlpha);
+    root.style.setProperty('--lux-backdrop-blur', backdropBlur);
+    root.style.setProperty('--lux-surface-shine-alpha', surfaceShineAlpha);
+    root.style.setProperty('--lux-smoke-alpha', smokeAlpha);
+    root.style.setProperty('--lux-glow-alpha', glowAlpha);
+    root.style.setProperty('--lux-glow-soft', glowSoft);
+    root.style.setProperty('--lux-glow-border', glowBorder);
+    root.style.setProperty('--lux-shine-alpha', shineAlpha);
+    root.style.setProperty('--lux-shine-soft', shineSoft);
+    root.style.setProperty('--lux-shine-beam', shineBeam);
+    root.style.setProperty('--lux-shine-veil', shineVeil);
+    root.style.setProperty('--lux-sparkle-alpha', sparkleAlpha);
+    root.style.setProperty('--lux-smoke-soft', smokeSoft);
+    root.style.setProperty('--lux-shine-speed', shineSeconds);
+    root.style.setProperty('--lux-particle-speed', particleDrift);
+    root.style.setProperty('--lux-graph-glow', graphGlow);
+    root.style.setProperty('--lux-graph-gradient', graphGradient);
+    root.style.setProperty('--lux-chart-hue', luxuryTuning.hue);
+    root.style.setProperty('--lux-chart-sat', luxuryTuning.saturation + '%');
+    root.style.setProperty('--lux-color-income', luxuryTuning.colorIncome);
+    root.style.setProperty('--lux-color-expense', luxuryTuning.colorExpense);
+    root.style.setProperty('--lux-color-line', luxuryTuning.colorLine);
+    root.style.setProperty('--lux-color-highlight', luxuryTuning.colorHighlight);
+    root.style.setProperty('--lux-color-glow', luxuryTuning.colorGlow);
+    root.style.setProperty('--lux-color-champagne', luxuryTuning.colorChampagne);
+    root.style.setProperty('--lux-color-berry', luxuryTuning.colorBerry);
+    root.style.setProperty('--lux-income-top', luxuryTuning.incomeTop);
+    root.style.setProperty('--lux-income-mid', luxuryTuning.incomeMid);
+    root.style.setProperty('--lux-income-bottom', luxuryTuning.incomeBottom);
+    root.style.setProperty('--lux-expense-top', luxuryTuning.expenseTop);
+    root.style.setProperty('--lux-expense-mid', luxuryTuning.expenseMid);
+    root.style.setProperty('--lux-expense-bottom', luxuryTuning.expenseBottom);
+    root.style.setProperty('--lux-line-top', luxuryTuning.lineTop);
+    root.style.setProperty('--lux-line-mid', luxuryTuning.lineMid);
+    root.style.setProperty('--lux-line-bottom', luxuryTuning.lineBottom);
+    root.style.setProperty('--lux-gradient-midpoint', (luxuryTuning.gradientMidpoint / 100).toFixed(2));
+    root.style.setProperty('--lux-aura-speed', animSeconds);
+
+    document.querySelectorAll('[data-lux-value]').forEach(el => {
+      const key = el.dataset.luxValue;
+      if (key && luxuryTuning[key] !== undefined) el.textContent = luxuryTuning[key];
+    });
+
+    document.querySelectorAll('[data-lux-control]').forEach(input => {
+      const key = input.dataset.luxControl;
+      if (key && luxuryTuning[key] !== undefined && document.activeElement !== input) input.value = luxuryTuning[key];
+    });
+
+    if (rerenderCharts) {
+      clearTimeout(luxuryRenderTimer);
+      luxuryRenderTimer = setTimeout(() => render(), 90);
+    }
+  }
+
+  function updateLuxuryTuning(partial, rerenderCharts = true) {
+    applyLuxuryTuning({ ...luxuryTuning, ...partial }, rerenderCharts);
+  }
+
+  function saveLuxuryTuning() {
+    luxuryTuning = normalizedLuxuryTuning(luxuryTuning);
+    localStorage.setItem('tally-luxury-tuning', JSON.stringify(luxuryTuning));
+    return luxuryTuning;
+  }
+
+  function resetLuxuryTuning(rerenderCharts = true) {
+    luxuryTuning = { ...defaultLuxuryTuning };
+    localStorage.removeItem('tally-luxury-tuning');
+    applyLuxuryTuning(luxuryTuning, rerenderCharts);
+    return luxuryTuning;
+  }
   function navigate(page, year, month) {
     currentPage = page || currentPage;
     if (year) currentYear = year;
@@ -186,6 +411,13 @@ const App = (() => {
     const quickAdd = document.getElementById('quick-add-btn');
     if (quickAdd) quickAdd.addEventListener('click', () => Pages.openAddModal(currentYear, currentMonth));
 
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      themeToggle.addEventListener('click', () => {
+        applyTheme(nextTheme(currentTheme), true);
+      });
+    }
+
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', async () => {
@@ -254,6 +486,8 @@ const App = (() => {
   }
 
   async function init() {
+    applyTheme(currentTheme);
+
     // Check auth before anything else
     try {
       const res = await fetch('/api/me');
@@ -294,14 +528,17 @@ const App = (() => {
     updateUserBadge(currentUser);
     bindEvents();
     navigate('dashboard');
+    applyTheme(currentTheme);
   }
 
   return {
-    init, navigate, render,
+    init, navigate, render, applyTheme, applyLuxuryTuning, updateLuxuryTuning, saveLuxuryTuning, resetLuxuryTuning,
     get currentYear() { return currentYear; },
     get currentMonth() { return currentMonth; },
     get currentPage() { return currentPage; },
-    get currentUser() { return currentUser; }
+    get currentUser() { return currentUser; },
+    get currentTheme() { return currentTheme; },
+    get luxuryTuning() { return { ...luxuryTuning }; }
   };
 })();
 
