@@ -2146,8 +2146,8 @@ const Pages = (() => {
         ` : `
         <div class="chat-messages" id="chat-messages">
           <div class="chat-msg assistant">
-            <div class="chat-msg-avatar">✦</div>
-            <div class="chat-bubble">Hey! I'm Tally, your personal AI financial advisor. I have full access to your budget data for ${App.currentMonth} ${App.currentYear}. What would you like to work through today? I can help you build a spending plan, identify savings opportunities, prioritize debt payoff, or just talk through any financial decision.</div>
+            <div class="chat-label">&#10022; Tally</div>
+            <div class="chat-bubble">Hey — I'm Tally. I have your full financial history loaded. Ask me about spending habits, income trends, where the money's going, or anything else. What do you want to know?</div>
           </div>
         </div>
         <div class="chat-suggestions" id="chat-suggestions">
@@ -2337,12 +2337,41 @@ const Pages = (() => {
         };
       }
 
+      function renderMarkdown(raw) {
+        const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const inline = s => esc(s)
+          .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+          .replace(/\*([^*\n]+?)\*/g,'<em>$1</em>')
+          .replace(/`([^`]+)`/g,'<code>$1</code>');
+        const lines = raw.split('\n');
+        const out = [];
+        let listBuf = [];
+        function flushList() {
+          if (listBuf.length) { out.push('<ul>' + listBuf.join('') + '</ul>'); listBuf = []; }
+        }
+        for (const line of lines) {
+          const t = line.trim();
+          if (/^-{3,}$/.test(t))          { flushList(); out.push('<hr>'); continue; }
+          const hm = t.match(/^(#{1,3})\s+(.+)/);
+          if (hm)                          { flushList(); const tag=['h3','h4','h5'][hm[1].length-1]; out.push(`<${tag}>${inline(hm[2])}</${tag}>`); continue; }
+          const li = t.match(/^[-•*]\s+(.+)/) || t.match(/^\d+\.\s+(.+)/);
+          if (li)                          { listBuf.push(`<li>${inline(li[1])}</li>`); continue; }
+          flushList();
+          if (!t)                          { out.push('<div class="chat-gap"></div>'); continue; }
+          out.push(`<p>${inline(t)}</p>`);
+        }
+        flushList();
+        return out.join('');
+      }
+
       function appendMessage(role, text) {
         const wrapper = document.createElement('div');
         wrapper.className = `chat-msg ${role}`;
-        wrapper.innerHTML = `
-          <div class="chat-msg-avatar">${role === 'assistant' ? '✦' : '👤'}</div>
-          <div class="chat-bubble">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+        if (role === 'assistant') {
+          wrapper.innerHTML = `<div class="chat-label">&#10022; Tally</div><div class="chat-bubble">${renderMarkdown(text)}</div>`;
+        } else {
+          wrapper.innerHTML = `<div class="chat-bubble">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+        }
         messagesEl.appendChild(wrapper);
         messagesEl.scrollTop = messagesEl.scrollHeight;
         return wrapper;
@@ -2352,7 +2381,7 @@ const Pages = (() => {
         const wrapper = document.createElement('div');
         wrapper.className = 'chat-msg assistant';
         wrapper.id = 'typing-indicator';
-        wrapper.innerHTML = `<div class="chat-msg-avatar">✦</div><div class="chat-bubble chat-typing"><span></span><span></span><span></span></div>`;
+        wrapper.innerHTML = `<div class="chat-label">&#10022; Tally</div><div class="chat-bubble chat-typing"><span></span><span></span><span></span></div>`;
         messagesEl.appendChild(wrapper);
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
