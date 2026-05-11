@@ -442,6 +442,14 @@ Give concise, actionable advice using specific dollar amounts from their data. B
   }
 });
 
+// Strip markdown code fences Claude sometimes wraps JSON in
+function extractJSON(text) {
+  if (!text) return null;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const raw = fenced ? fenced[1].trim() : text.trim();
+  return JSON.parse(raw);
+}
+
 // ── AI Voice Parsing (protected, dual provider) ──
 app.post('/api/voice/parse', requireAuth, (req, res) => {
   const { transcript, accounts } = req.body;
@@ -501,7 +509,7 @@ Rules:
           const p = JSON.parse(data);
           if (p.error) { console.log('[/api/voice/parse] OpenAI error:', p.error.message); return res.status(400).json({ error: p.error.message }); }
           const text = p.choices[0].message.content;
-          const parsed = JSON.parse(text);
+          const parsed = extractJSON(text);
           console.log('[/api/voice/parse] OpenAI result:', parsed);
           res.json(parsed);
         } catch (e) { console.log('[/api/voice/parse] OpenAI parse error:', e.message); res.status(500).json({ error: 'Could not parse OpenAI response: ' + e.message }); }
@@ -529,7 +537,7 @@ Rules:
           const p = JSON.parse(data);
           if (p.error) { console.log('[/api/voice/parse] Claude error:', p.error.message); return res.status(400).json({ error: p.error.message }); }
           const text = p.content[0].text;
-          const parsed = JSON.parse(text);
+          const parsed = extractJSON(text);
           console.log('[/api/voice/parse] Claude result:', parsed);
           res.json(parsed);
         } catch (e) { console.log('[/api/voice/parse] Claude parse error:', e.message); res.status(500).json({ error: 'Could not parse Claude response: ' + e.message }); }
