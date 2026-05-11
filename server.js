@@ -444,10 +444,20 @@ Give concise, actionable advice using specific dollar amounts from their data. B
 
 // ── AI Voice Parsing (protected, dual provider) ──
 app.post('/api/voice/parse', requireAuth, (req, res) => {
-  const { transcript, apiKey, provider, accounts } = req.body;
-  console.log('[/api/voice/parse] hit — provider:', provider, 'hasKey:', !!apiKey, 'transcript:', transcript);
+  const { transcript, accounts } = req.body;
   if (!transcript) return res.status(400).json({ error: 'No transcript provided.' });
-  if (!apiKey) { console.log('[/api/voice/parse] rejected: no API key'); return res.status(400).json({ error: 'No API key provided.' }); }
+
+  // Read API key server-side from the authenticated user's stored settings
+  const userData = readUserData(req.session.userId);
+  const settings = userData && userData.settings ? userData.settings : {};
+  const provider = settings.aiProvider || 'claude';
+  const apiKey = provider === 'openai' ? settings.openaiApiKey : settings.aiApiKey;
+
+  console.log('[/api/voice/parse] hit — userId:', req.session.userId, 'provider:', provider, 'hasKey:', !!apiKey, 'transcript:', transcript);
+  if (!apiKey) {
+    console.log('[/api/voice/parse] no API key in user settings, returning 400');
+    return res.status(400).json({ error: 'No API key configured. Add your API key in Settings.' });
+  }
 
   const accountList = Array.isArray(accounts) && accounts.length ? accounts.join(', ') : 'none specified';
   const systemPrompt = `You are a financial transaction parser. Extract structured data from a spoken transaction description and return ONLY valid JSON.

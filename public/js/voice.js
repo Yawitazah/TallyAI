@@ -41,50 +41,39 @@ const Voice = (() => {
 
   async function parseTranscript(text) {
     const settings = DB.getSettings();
-    const provider = settings.aiProvider || 'claude';
-    const apiKey = provider === 'openai' ? settings.openaiApiKey : settings.aiApiKey;
-
-    console.log('[Voice] parseTranscript — provider:', provider, 'hasKey:', !!apiKey);
-
-    if (apiKey) {
-      try {
-        console.log('[Voice] calling /api/voice/parse for:', text);
-        const resp = await fetch('/api/voice/parse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transcript: text,
-            apiKey,
-            provider,
-            accounts: settings.accounts || []
-          })
-        });
-        const data = await resp.json();
-        console.log('[Voice] /api/voice/parse response:', data);
-        if (resp.ok && data.amount) {
-          const today = new Date();
-          let date = today.toISOString().split('T')[0];
-          if (text.toLowerCase().includes('yesterday')) {
-            const y = new Date(today); y.setDate(y.getDate() - 1);
-            date = y.toISOString().split('T')[0];
-          }
-          return {
-            amount: data.amount,
-            description: data.description || text,
-            section: data.section || 'variableExpenses',
-            category: data.category || 'Other',
-            account: data.account || '',
-            date,
-            isIncome: data.section === 'income',
-            rawText: text
-          };
+    try {
+      console.log('[Voice] calling /api/voice/parse for:', text);
+      const resp = await fetch('/api/voice/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: text,
+          accounts: settings.accounts || []
+        })
+      });
+      const data = await resp.json();
+      console.log('[Voice] /api/voice/parse response:', resp.status, data);
+      if (resp.ok && data.amount) {
+        const today = new Date();
+        let date = today.toISOString().split('T')[0];
+        if (text.toLowerCase().includes('yesterday')) {
+          const y = new Date(today); y.setDate(y.getDate() - 1);
+          date = y.toISOString().split('T')[0];
         }
-        console.warn('[Voice] AI parse failed or missing amount, falling back to regex. data:', data);
-      } catch (e) {
-        console.warn('[Voice] /api/voice/parse error, falling back to regex:', e.message);
+        return {
+          amount: data.amount,
+          description: data.description || text,
+          section: data.section || 'variableExpenses',
+          category: data.category || 'Other',
+          account: data.account || '',
+          date,
+          isIncome: data.section === 'income',
+          rawText: text
+        };
       }
-    } else {
-      console.log('[Voice] no API key configured, using regex fallback');
+      console.warn('[Voice] AI parse failed or no amount returned, falling back to regex. status:', resp.status, 'data:', data);
+    } catch (e) {
+      console.warn('[Voice] /api/voice/parse error, falling back to regex:', e.message);
     }
 
     return parseTranscriptRegex(text);
