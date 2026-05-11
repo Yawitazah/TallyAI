@@ -485,7 +485,7 @@ Rules:
 - amount: the dollar value as a number (e.g. 24.45). Handle speech-to-text artifacts: "twenty four forty five" → 24.45, "24 or 45" → 24.45, "24 and 45" → 24.45.
 - section: "income" if money was received/earned; "fixedExpenses" for recurring bills (rent, utilities, subscriptions, insurance, loan payments); "variableExpenses" for everyday spending.
 - category: pick the best fit from these options — Income: [BBB Salary, Content/Freelance, PlanNet, Zah Brand Solutions, Dejzah.Life, Tax Refund, Refunds, Gifts]. Fixed: [Rent, Wifi, Utilities, Car Insurance, ATT, Netflix, Spotify, Amazon Prime, ChatGPT, Adobe, Canva, Google One, LA Fitness, Nelnet, Renters Insurance, Doordash DashPass, Instacart+, Higgsfield, ElevenLabs, GoDaddy, CapCut, Gamma, Suno, Wix: HOY, Apple, PlanNet Subscription, Dejah Allowance]. Variable: [Groceries, Eating Out, Gas, Auto / Car Maintenance, Household Shopping, Clothes Shopping, Entertainment / Date, Personal Care, Medical / Health, School / Extra-Curricular, Baby, Charity, Travel, Misc Business Expenses, Other].
-- account: match the closest account name from the known accounts list (exact or close match). Empty string if none mentioned.
+- account: return the account name exactly as the user said it (e.g. "Cash App", "Capital One", "Venmo"). If the spoken name exactly matches one in the known accounts list, use that. If it doesn't match but was clearly mentioned, still return what was said — do NOT substitute a different account from the list. Empty string if no account was mentioned.
 - description: short merchant or item name extracted from the transcript.`;
 
   const userMsg = `Parse this transaction: "${transcript}"`;
