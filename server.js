@@ -442,6 +442,90 @@ Give concise, actionable advice using specific dollar amounts from their data. B
   }
 });
 
+// ── AI Voice Parsing (protected, dual provider) ──
+app.post('/api/voice/parse', requireAuth, (req, res) => {
+  const { transcript, apiKey, provider, accounts } = req.body;
+  if (!transcript) return res.status(400).json({ error: 'No transcript provided.' });
+  if (!apiKey) return res.status(400).json({ error: 'No API key provided.' });
+
+  const accountList = Array.isArray(accounts) && accounts.length ? accounts.join(', ') : 'none specified';
+  const systemPrompt = `You are a financial transaction parser. Extract structured data from a spoken transaction description and return ONLY valid JSON.
+
+Known accounts for this user: ${accountList}
+
+Return this exact JSON shape (no markdown, no explanation):
+{
+  "amount": <number or null>,
+  "section": <"income" | "fixedExpenses" | "variableExpenses">,
+  "category": <string>,
+  "account": <string or "">,
+  "description": <short merchant/item string>
+}
+
+Rules:
+- amount: the dollar value as a number (e.g. 24.45). Handle speech-to-text artifacts: "twenty four forty five" → 24.45, "24 or 45" → 24.45, "24 and 45" → 24.45.
+- section: "income" if money was received/earned; "fixedExpenses" for recurring bills (rent, utilities, subscriptions, insurance, loan payments); "variableExpenses" for everyday spending.
+- category: pick the best fit from these options — Income: [BBB Salary, Content/Freelance, PlanNet, Zah Brand Solutions, Dejzah.Life, Tax Refund, Refunds, Gifts]. Fixed: [Rent, Wifi, Utilities, Car Insurance, ATT, Netflix, Spotify, Amazon Prime, ChatGPT, Adobe, Canva, Google One, LA Fitness, Nelnet, Renters Insurance, Doordash DashPass, Instacart+, Higgsfield, ElevenLabs, GoDaddy, CapCut, Gamma, Suno, Wix: HOY, Apple, PlanNet Subscription, Dejah Allowance]. Variable: [Groceries, Eating Out, Gas, Auto / Car Maintenance, Household Shopping, Clothes Shopping, Entertainment / Date, Personal Care, Medical / Health, School / Extra-Curricular, Baby, Charity, Travel, Misc Business Expenses, Other].
+- account: match the closest account name from the known accounts list (exact or close match). Empty string if none mentioned.
+- description: short merchant or item name extracted from the transcript.`;
+
+  const userMsg = `Parse this transaction: "${transcript}"`;
+
+  if (provider === 'openai') {
+    const payload = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMsg }],
+      max_tokens: 256,
+      response_format: { type: 'json_object' }
+    });
+    const opts = {
+      hostname: 'api.openai.com', path: '/v1/chat/completions', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'Content-Length': Buffer.byteLength(payload) }
+    };
+    const apiReq = https.request(opts, apiRes => {
+      let data = '';
+      apiRes.on('data', c => data += c);
+      apiRes.on('end', () => {
+        try {
+          const p = JSON.parse(data);
+          if (p.error) return res.status(400).json({ error: p.error.message });
+          const text = p.choices[0].message.content;
+          res.json(JSON.parse(text));
+        } catch (e) { res.status(500).json({ error: 'Could not parse OpenAI response: ' + e.message }); }
+      });
+    });
+    apiReq.on('error', e => res.status(500).json({ error: 'Network error: ' + e.message }));
+    apiReq.write(payload);
+    apiReq.end();
+  } else {
+    const payload = JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMsg }]
+    });
+    const opts = {
+      hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(payload) }
+    };
+    const apiReq = https.request(opts, apiRes => {
+      let data = '';
+      apiRes.on('data', c => data += c);
+      apiRes.on('end', () => {
+        try {
+          const p = JSON.parse(data);
+          if (p.error) return res.status(400).json({ error: p.error.message });
+          const text = p.content[0].text;
+          res.json(JSON.parse(text));
+        } catch (e) { res.status(500).json({ error: 'Could not parse Claude response: ' + e.message }); }
+      });
+    });
+    apiReq.on('error', e => res.status(500).json({ error: 'Network error: ' + e.message }));
+    apiReq.write(payload);
+    apiReq.end();
+  }
+});
+
 // ───────────────────────────────────────────────
 // CSV EXPORT (tax + general reports)
 // ───────────────────────────────────────────────

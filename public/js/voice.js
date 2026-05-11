@@ -20,11 +20,11 @@ const Voice = (() => {
     if (!recognition) init();
     if (!recognition) { callback(null, 'Speech recognition not supported'); return; }
     onResult = callback;
-    recognition.onresult = (e) => {
+    recognition.onresult = async (e) => {
       const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
       const isFinal = e.results[e.results.length - 1].isFinal;
       if (isFinal) {
-        const parsed = parseTranscript(transcript);
+        const parsed = await parseTranscript(transcript);
         callback({ transcript, parsed, isFinal: true });
       } else {
         callback({ transcript, isFinal: false });
@@ -39,7 +39,54 @@ const Voice = (() => {
     if (recognition) recognition.stop();
   }
 
-  function parseTranscript(text) {
+  async function parseTranscript(text) {
+    const settings = DB.getSettings();
+    const cfg = settings.aiConfig || {};
+    const provider = cfg.provider || 'claude';
+    const apiKey = provider === 'openai' ? cfg.openaiApiKey : cfg.aiApiKey;
+
+    if (apiKey) {
+      try {
+        const resp = await fetch('/api/voice/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript: text,
+            apiKey,
+            provider,
+            accounts: settings.accounts || []
+          })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.amount) {
+            const today = new Date();
+            let date = today.toISOString().split('T')[0];
+            if (text.toLowerCase().includes('yesterday')) {
+              const y = new Date(today); y.setDate(y.getDate() - 1);
+              date = y.toISOString().split('T')[0];
+            }
+            return {
+              amount: data.amount,
+              description: data.description || text,
+              section: data.section || 'variableExpenses',
+              category: data.category || 'Other',
+              account: data.account || '',
+              date,
+              isIncome: data.section === 'income',
+              rawText: text
+            };
+          }
+        }
+      } catch (e) {
+        // fall through to regex
+      }
+    }
+
+    return parseTranscriptRegex(text);
+  }
+
+  function parseTranscriptRegex(text) {
     const t = text.toLowerCase().trim();
 
     // Extract amount — handles STT decimal artifacts before standard patterns
@@ -72,35 +119,25 @@ const Voice = (() => {
       if (amtMatch) amount = parseFloat(amtMatch[1]);
     }
 
-    // Detect direction
     const isIncome = /received|got|made|earned|income|paid me|deposited|salary|paycheck|bonus/.test(t);
-    const isExpense = /spent|paid|bought|charged|owe|expense|cost|bill/.test(t);
 
-    // Extract merchant/category from common patterns
-    // "spent $45 on gas" / "paid $2250 rent" / "received $500 from Zah"
-    let description = text;
+    let itemDesc = '';
     const onMatch = t.match(/on\s+(.+?)(?:\s+(?:yesterday|today|this week|last week|monday|tuesday|wednesday|thursday|friday|saturday|sunday))?$/i);
     const forMatch = t.match(/for\s+(.+?)(?:\s+(?:yesterday|today))?$/i);
     const fromMatch = t.match(/from\s+(.+?)(?:\s+(?:yesterday|today))?$/i);
-
-    let itemDesc = '';
     if (onMatch) itemDesc = onMatch[1].trim();
     else if (forMatch) itemDesc = forMatch[1].trim();
     else if (fromMatch) itemDesc = fromMatch[1].trim();
     else {
-      // strip amount and direction words
       itemDesc = t.replace(/\$?\d+(?:[.,]\d{1,2})?/, '').replace(/spent|paid|bought|received|got|made|earned|on|for|from|yesterday|today/g, '').trim();
     }
 
-    // Detect account mention
-    // Sort longest-first so "Cash App" matches before "Cash", "Capital One" before "Capital", etc.
     const accounts = [...DB.getSettings().accounts].sort((a, b) => b.length - a.length);
     let account = '';
     for (const a of accounts) {
       if (t.includes(a.toLowerCase())) { account = a; break; }
     }
     if (!account) {
-      // Ordered longest → shortest to avoid shorter substrings stealing the match
       const acctFallbacks = [
         ['bank of america', 'Bank of America'],
         ['american express', 'Amex'],
@@ -125,7 +162,6 @@ const Voice = (() => {
       }
     }
 
-    // Detect date
     const today = new Date();
     let date = today.toISOString().split('T')[0];
     if (t.includes('yesterday')) {
