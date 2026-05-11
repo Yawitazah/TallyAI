@@ -2128,7 +2128,7 @@ const Pages = (() => {
           <div class="advisor-avatar">✦</div>
           <div class="advisor-info">
             <div class="advisor-name">Tally &mdash; AI Financial Advisor</div>
-            <div class="${hasKey ? 'advisor-status' : 'advisor-no-key'}">${hasKey ? `â— Online &mdash; Powered by ${provider === 'openai' ? 'ChatGPT (OpenAI)' : 'Claude (Anthropic)'}` : '⚠ No API key set &mdash; go to Settings to connect Claude or ChatGPT'}</div>
+            <div class="${hasKey ? 'advisor-status' : 'advisor-no-key'}">${hasKey ? `&#9679; Online &mdash; Powered by ${provider === 'openai' ? 'ChatGPT (OpenAI)' : 'Claude (Anthropic)'}` : '⚠ No API key set &mdash; go to Settings to connect Claude or ChatGPT'}</div>
           </div>
         </div>
 
