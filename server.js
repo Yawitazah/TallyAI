@@ -346,32 +346,12 @@ app.post('/api/chat', requireAuth, (req, res) => {
   const { messages, apiKey, context, provider } = req.body;
   if (!apiKey) return res.status(400).json({ error: 'No API key provided. Add your API key in Settings.' });
 
-  const systemPrompt = `You are Tally, a warm and expert personal financial advisor for the ${context.householdName || 'household'}. You have full access to their real budget data and give direct, practical advice.
+  const systemPrompt = `You are Tally, a sharp personal financial advisor for ${context.householdName || 'this household'}. You have their complete financial history — every transaction, every category, every month, every year loaded in the app. Speak like a professional: direct, specific, no filler. Use exact dollar amounts. Bullet points for lists. Keep responses concise unless they ask for detail. Never invent numbers not in the data.
 
-CURRENT FINANCIAL SNAPSHOT (${context.month} ${context.year}):
-- Total Income: $${context.income}
-- Total Expenses: $${context.expenses}
-- Debt Payments: $${context.debtPayments}
-- Savings Contributions: $${context.savings}
-- Net Cash Flow: $${context.net}
-- Ending Balance: $${context.endingBalance}
+COMPLETE FINANCIAL DATA:
+${context.fullData || `${context.month} ${context.year}: Income $${context.income}, Expenses $${context.expenses}, Net $${context.net}`}
 
-ANNUAL CONTEXT (${context.year}):
-${context.annualSummary || 'No annual data available.'}
-
-TOP VARIABLE EXPENSES THIS MONTH:
-${context.topExpenses || 'No data.'}
-
-ACTIVE DEBTS:
-${context.debts || 'No debt data.'}
-
-SAVINGS GOALS:
-${context.goals || 'No savings goals.'}
-
-HOUSEHOLD MEMBERS: ${context.members || 'Not specified'}
-CURRENT USER: ${req.session.userName || 'Unknown'}
-
-Give concise, actionable advice using specific dollar amounts from their data. Be encouraging but honest about problem areas. Use bullet points for clarity. Never invent numbers not in the data above.`;
+CURRENT USER: ${req.session.userName || 'Unknown'}`;
 
   function friendlyError(msg, provider) {
     if (!msg) return 'Unknown error from AI provider.';

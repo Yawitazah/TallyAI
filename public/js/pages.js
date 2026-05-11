@@ -1034,7 +1034,7 @@ const Pages = (() => {
 
     body.innerHTML = `
       <div class="modal-tabs">
-        <button class="modal-tab" data-tab="voice">🎤 Voice</button>
+        <button class="modal-tab" data-tab="voice"><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 18v4M9 22h6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>Voice</button>
         <button class="modal-tab" data-tab="manual">✏ Manual</button>
       </div>
       <div id="add-tab-content"></div>`;
@@ -1069,7 +1069,7 @@ const Pages = (() => {
           <div class="voice-ring r1"></div>
           <div class="voice-ring r2"></div>
           <div class="voice-ring r3"></div>
-          <span class="mic-big">🎤</span>
+          <svg class="mic-big" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 18v4M9 22h6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>
         </div>
         <h3 class="voice-title">Listening…</h3>
         <p class="voice-hint">Say something like:<br><em>"Spent $45 on gas yesterday"</em><br><em>"Received $500 from Zah Brand Solutions"</em><br><em>"Paid $2250 rent on Capital One"</em></p>
@@ -2162,7 +2162,7 @@ const Pages = (() => {
           <span class="dictate-interim" id="dictate-interim"></span>
         </div>
         <div class="chat-input-row">
-          <button class="chat-mic" id="chat-mic" title="Dictate">🎤</button>
+          <button class="chat-mic" id="chat-mic" title="Dictate"><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 18v4M9 22h6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg></button>
           <textarea class="chat-input" id="chat-input" placeholder="Ask Tally anything about your finances…" rows="1"></textarea>
           <button class="chat-send" id="chat-send">➤</button>
         </div>
@@ -2191,39 +2191,149 @@ const Pages = (() => {
       const suggestionsEl = document.getElementById('chat-suggestions');
 
       function buildContext() {
-        const year = App.currentYear;
-        const month = App.currentMonth;
-        const m = DB.getMonth(year, month);
-        const s2 = m?.summary || {};
-        const yearData = DB.get().data[year];
-
-        const topExpenses = (m?.variableExpenses || [])
-          .sort((a,b) => (b.actual||0)-(a.actual||0)).slice(0,5)
-          .map(e => `  - ${e.category}: $${(e.actual||0).toFixed(2)}`).join('\n');
-
-        const debts = (m?.debt || [])
-          .map(d => `  - ${d.creditor||d.category}: balance $${(d.balance||0).toFixed(2)}, payment $${(d.payment||0).toFixed(2)}`).join('\n');
-
-        const goals = (m?.savings || [])
-          .map(g => `  - ${g.goal||g.account||g.category}: $${(g.contribution||0).toFixed(2)}/mo`).join('\n');
-
-        const annualSummary = yearData?.annualTotals
-          ? `Income: $${yearData.annualTotals.income?.actual?.toFixed(2)||0} | Expenses: $${yearData.annualTotals.totalExpenses?.actual?.toFixed(2)||0}`
-          : null;
-
+        const currentYear = App.currentYear;
+        const currentMonth = App.currentMonth;
+        const allData = DB.get();
         const cfg = DB.getSettings();
-        const members = [cfg.person1?.name, cfg.person2?.name].filter(Boolean).join(' & ') || 'Not specified';
+        const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        const allYears = Object.keys(allData.data || {}).sort();
+        const $2 = n => (n || 0).toFixed(2);
+        const $0 = n => (n || 0).toFixed(0);
+        const members = (cfg.users || []).map(u => u.name).filter(Boolean).join(' & ') || 'Not specified';
+        const lines = [];
 
+        lines.push(`HOUSEHOLD: ${cfg.householdName || 'My Budget'} | MEMBERS: ${members}`);
+        lines.push(`CURRENT VIEW: ${currentMonth} ${currentYear}`);
+        lines.push('');
+
+        for (const year of allYears) {
+          const yearObj = allData.data[year];
+          if (!yearObj?.months) continue;
+          const monthsWithData = MONTHS
+            .map(m => ({ name: m, d: yearObj.months[m] }))
+            .filter(({ d }) => d && ((d.income?.length || 0) + (d.fixedExpenses?.length || 0) + (d.variableExpenses?.length || 0)) > 0);
+          if (!monthsWithData.length) continue;
+
+          lines.push(`=== ${year} ===`);
+
+          // Monthly cash flow summaries
+          lines.push('Monthly cash flow:');
+          for (const { name, d } of monthsWithData) {
+            const s = d.summary || {};
+            lines.push(`  ${name.slice(0,3)}: income $${$0(s.totalIncome)} | expenses $${$0(s.totalExpenses)} | debt $${$0(s.debtPayments)} | savings $${$0(s.savingsContributions)} | net $${$0(s.netCashFlow)}`);
+          }
+
+          // Variable spending by category across all months
+          const catMap = {};
+          for (const { name, d } of monthsWithData) {
+            for (const item of (d.variableExpenses || [])) {
+              const cat = item.category || 'Other';
+              if (!catMap[cat]) catMap[cat] = { total: 0 };
+              catMap[cat][name] = (catMap[cat][name] || 0) + (item.actual || 0);
+              catMap[cat].total += (item.actual || 0);
+            }
+          }
+          if (Object.keys(catMap).length) {
+            lines.push('Variable spending by category:');
+            for (const [cat, data] of Object.entries(catMap).sort((a, b) => b[1].total - a[1].total)) {
+              const breakdown = monthsWithData.filter(({ name }) => data[name])
+                .map(({ name }) => `${name.slice(0,3)} $${$0(data[name])}`).join(', ');
+              lines.push(`  ${cat}: $${$0(data.total)} total (${breakdown})`);
+            }
+          }
+
+          // Income sources
+          const incMap = {};
+          for (const { name, d } of monthsWithData) {
+            for (const item of (d.income || [])) {
+              const src = item.source || 'Income';
+              if (!incMap[src]) incMap[src] = { total: 0 };
+              incMap[src][name] = (incMap[src][name] || 0) + (item.actual || 0);
+              incMap[src].total += (item.actual || 0);
+            }
+          }
+          if (Object.keys(incMap).length) {
+            lines.push('Income sources:');
+            for (const [src, data] of Object.entries(incMap).sort((a, b) => b[1].total - a[1].total)) {
+              const breakdown = monthsWithData.filter(({ name }) => data[name])
+                .map(({ name }) => `${name.slice(0,3)} $${$0(data[name])}`).join(', ');
+              lines.push(`  ${src}: $${$0(data.total)} total (${breakdown})`);
+            }
+          }
+
+          // Fixed expenses totals
+          const fixedMap = {};
+          for (const { d } of monthsWithData) {
+            for (const item of (d.fixedExpenses || [])) {
+              const cat = item.category || 'Fixed';
+              fixedMap[cat] = (fixedMap[cat] || 0) + (item.actual || 0);
+            }
+          }
+          if (Object.keys(fixedMap).length) {
+            lines.push('Fixed expenses:');
+            for (const [cat, total] of Object.entries(fixedMap).sort((a, b) => b[1] - a[1]))
+              lines.push(`  ${cat}: $${$0(total)}`);
+          }
+
+          // Debt status (latest values)
+          const debtMap = {};
+          for (const { d } of monthsWithData) {
+            for (const item of (d.debt || [])) {
+              const name = item.creditor || item.category || 'Debt';
+              debtMap[name] = { balance: item.balance || 0, payment: item.payment || 0 };
+            }
+          }
+          if (Object.keys(debtMap).length) {
+            lines.push('Debts:');
+            for (const [name, info] of Object.entries(debtMap))
+              lines.push(`  ${name}: balance $${$0(info.balance)}, $${$0(info.payment)}/mo`);
+          }
+
+          lines.push('');
+        }
+
+        // Full current month line-item detail
+        const m = DB.getMonth(currentYear, currentMonth);
+        if (m) {
+          lines.push(`=== FULL DETAIL: ${currentMonth} ${currentYear} ===`);
+          const s = m.summary || {};
+          lines.push(`Net: $${$2(s.netCashFlow)} | Ending balance: $${$2(s.endingBalance)}`);
+          if (m.income?.length) {
+            lines.push('Income:');
+            for (const i of m.income)
+              lines.push(`  ${i.source}: $${$2(i.actual)} actual, $${$2(i.expected)} expected, via ${i.account || '—'}`);
+          }
+          if (m.fixedExpenses?.length) {
+            lines.push('Fixed expenses:');
+            for (const i of m.fixedExpenses)
+              lines.push(`  ${i.category}: $${$2(i.actual)}, budget $${$2(i.budget)}, via ${i.account || '—'}`);
+          }
+          if (m.variableExpenses?.length) {
+            lines.push('Variable expenses:');
+            for (const i of m.variableExpenses)
+              lines.push(`  ${i.category}: $${$2(i.actual)}, budget $${$2(i.budget)}, via ${i.account || '—'}`);
+          }
+          if (m.debt?.length) {
+            lines.push('Debt payments:');
+            for (const i of m.debt)
+              lines.push(`  ${i.creditor || i.category}: $${$2(i.payment)}/mo, balance $${$2(i.balance)}`);
+          }
+          if (m.savings?.length) {
+            lines.push('Savings:');
+            for (const i of m.savings)
+              lines.push(`  ${i.goal || i.category}: $${$2(i.contribution)}`);
+          }
+        }
+
+        const fullData = lines.join('\n');
+        const s2 = m?.summary || {};
         return {
           householdName: cfg.householdName,
-          month, year,
-          income: (s2.totalIncome||0).toFixed(2),
-          expenses: (s2.totalExpenses||0).toFixed(2),
-          debtPayments: (s2.debtPayments||0).toFixed(2),
-          savings: (s2.savingsContributions||0).toFixed(2),
-          net: (s2.netCashFlow||0).toFixed(2),
-          endingBalance: (s2.endingBalance||0).toFixed(2),
-          topExpenses, debts, goals, annualSummary, members
+          month: currentMonth, year: currentYear,
+          income: $2(s2.totalIncome), expenses: $2(s2.totalExpenses),
+          debtPayments: $2(s2.debtPayments), savings: $2(s2.savingsContributions),
+          net: $2(s2.netCashFlow), endingBalance: $2(s2.endingBalance),
+          members, fullData
         };
       }
 
