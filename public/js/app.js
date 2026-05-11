@@ -476,6 +476,13 @@ const App = (() => {
 
     VoiceModal.bindEvents();
 
+    const addModalClose = document.getElementById('add-modal-close');
+    if (addModalClose) addModalClose.onclick = Pages.closeAddModal;
+
+    document.getElementById('add-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('add-modal')) Pages.closeAddModal();
+    });
+
     document.addEventListener('click', e => {
       const sidebar = document.getElementById('sidebar');
       const mb = document.getElementById('menu-btn');

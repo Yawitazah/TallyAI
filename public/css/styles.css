@@ -490,6 +490,32 @@ body {
 .ym-net.neg { color: var(--danger); }
 .ym-empty { opacity: 0.35; }
 
+/* ===== MODAL TABS ===== */
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.modal-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text2);
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  margin-bottom: -1px;
+}
+.modal-tab:hover { color: var(--text); }
+.modal-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.add-voice-tab { padding: 4px 0 0; }
+.add-voice-inner { text-align: center; padding: 8px 0 4px; }
+
 /* ===== ADD TRANSACTION ===== */
 .add-form { display: flex; flex-direction: column; gap: 16px; }
 .type-selector { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
@@ -1292,6 +1318,7 @@ input.inline-edit {
   .bill-status { font-size: 0.72rem; }
 
   /* ── Type selector (Add modal) ── */
+  .modal-tab { font-size: 0.82rem; padding: 10px 12px; }
   .type-selector { grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .type-btn { padding: 12px 6px; min-height: 60px; font-size: 0.7rem; }
   .type-btn-icon { font-size: 1.2rem; }

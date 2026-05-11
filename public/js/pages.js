@@ -1027,38 +1027,159 @@ const Pages = (() => {
   }
 
   // ===== ADD TRANSACTION MODAL =====
-  function openAddModal(year, month, defaultSection = 'variableExpenses') {
+  function openAddModal(year, month, defaultSection = 'variableExpenses', startOnManual = false) {
     const modal = document.getElementById('add-modal');
     const body = document.getElementById('add-modal-body');
     modal.style.display = 'flex';
 
-    const settings = DB.getSettings();
-    const sections = { income:'income', fixedExpenses:'fixed', variableExpenses:'variable', debt:'debt', savings:'savings' };
-
     body.innerHTML = `
-      <div class="add-form">
-        <div class="form-group">
-          <label class="form-label">Transaction Type</label>
-          <div class="type-selector">
-            ${Object.entries({ income:['💚','Income'], fixedExpenses:['🔵','Fixed'], variableExpenses:['🟡','Variable'], debt:['🔴','Debt'], savings:['🟣','Savings'] }).map(([k,[icon,label]]) => `
-              <div class="type-btn${k===defaultSection?' active':''}" data-section="${k}"><span class="type-icon">${icon}</span>${label}</div>`).join('')}
-          </div>
+      <div class="modal-tabs">
+        <button class="modal-tab" data-tab="voice">🎤 Voice</button>
+        <button class="modal-tab" data-tab="manual">✏ Manual</button>
+      </div>
+      <div id="add-tab-content"></div>`;
+
+    let activeTab = null;
+    const tabContent = document.getElementById('add-tab-content');
+
+    function switchTab(tab) {
+      if (activeTab === 'voice' && tab !== 'voice') Voice.stop();
+      activeTab = tab;
+      body.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      tabContent.innerHTML = '';
+      if (tab === 'voice') {
+        tabContent.appendChild(renderVoiceTab(year, month));
+      } else {
+        renderManualForm(year, month, defaultSection, tabContent);
+      }
+    }
+
+    body.querySelectorAll('.modal-tab').forEach(btn => {
+      btn.onclick = () => switchTab(btn.dataset.tab);
+    });
+
+    switchTab(startOnManual ? 'manual' : 'voice');
+  }
+
+  function renderVoiceTab(year, month) {
+    const panel = el('div', 'add-voice-tab');
+    panel.innerHTML = `
+      <div class="add-voice-inner">
+        <div class="voice-animation">
+          <div class="voice-ring r1"></div>
+          <div class="voice-ring r2"></div>
+          <div class="voice-ring r3"></div>
+          <span class="mic-big">🎤</span>
         </div>
-
-        <div id="add-fields"><!-- rendered by section --></div>
-
-        <div class="modal-footer" style="border:none;padding:0">
-          <button class="btn btn-ghost" id="add-cancel">Cancel</button>
-          <button class="btn btn-gold" id="add-save">Save Transaction</button>
+        <h3 class="voice-title">Listening…</h3>
+        <p class="voice-hint">Say something like:<br><em>"Spent $45 on gas yesterday"</em><br><em>"Received $500 from Zah Brand Solutions"</em><br><em>"Paid $2250 rent on Capital One"</em></p>
+        <div class="voice-transcript" id="add-voice-transcript"></div>
+        <div class="voice-parsed" id="add-voice-parsed"></div>
+        <div class="voice-actions" id="add-voice-actions" style="display:none">
+          <button class="btn btn-success" id="add-voice-confirm">✓ Add Transaction</button>
+          <button class="btn btn-ghost" id="add-voice-retry">Try Again</button>
         </div>
       </div>`;
+
+    let parsedData = null;
+    const transcriptEl = panel.querySelector('#add-voice-transcript');
+    const parsedEl    = panel.querySelector('#add-voice-parsed');
+    const actionsEl   = panel.querySelector('#add-voice-actions');
+
+    function startListening() {
+      actionsEl.style.display = 'none';
+      parsedEl.className = 'voice-parsed';
+      parsedEl.textContent = '';
+      transcriptEl.className = 'voice-transcript';
+      transcriptEl.textContent = '';
+      parsedData = null;
+
+      if (!Voice.isSupported()) {
+        transcriptEl.className = 'voice-transcript show';
+        transcriptEl.textContent = '⚠ Voice recognition is not supported in this browser. Please use Chrome.';
+        return;
+      }
+
+      Voice.start((result, error) => {
+        if (error) {
+          transcriptEl.className = 'voice-transcript show';
+          transcriptEl.textContent = `Error: ${error}. Please try again.`;
+          return;
+        }
+        transcriptEl.className = 'voice-transcript show';
+        transcriptEl.textContent = `"${result.transcript}"`;
+
+        if (result.isFinal) {
+          parsedData = result.parsed;
+          const sectionLabel = parsedData.section === 'income' ? 'Income' :
+                               parsedData.section === 'fixedExpenses' ? 'Fixed Expense' :
+                               parsedData.section === 'variableExpenses' ? 'Variable Expense' :
+                               parsedData.section === 'debt' ? 'Debt Payment' : 'Savings';
+          parsedEl.className = 'voice-parsed show';
+          parsedEl.innerHTML = `
+            <strong>I heard:</strong><br>
+            💰 Amount: <strong>${parsedData.amount ? fmt(parsedData.amount) : 'not detected'}</strong><br>
+            📁 Type: <strong>${sectionLabel}</strong><br>
+            🏷 Category: <strong>${parsedData.category}</strong><br>
+            🏦 Account: <strong>${parsedData.account || 'not specified'}</strong>`;
+          actionsEl.style.display = 'flex';
+        }
+      });
+    }
+
+    panel.querySelector('#add-voice-confirm').onclick = () => {
+      if (!parsedData || !parsedData.amount) {
+        showToast('Could not parse amount. Try again.', 'error');
+        return;
+      }
+      if (parsedData.section === 'income') {
+        DB.addLineItem(year, month, 'income', { source: parsedData.category, expected: 0, actual: parsedData.amount, account: parsedData.account, purpose: '' });
+      } else if (parsedData.section === 'fixedExpenses') {
+        DB.addLineItem(year, month, 'fixedExpenses', { category: parsedData.category, budget: 0, actual: parsedData.amount, account: parsedData.account, dueDate: '' });
+      } else {
+        DB.addLineItem(year, month, 'variableExpenses', { category: parsedData.category, budget: 0, actual: parsedData.amount, account: parsedData.account });
+      }
+      DB.updateSummary(year, month);
+      Voice.stop();
+      closeAddModal();
+      showToast(`✓ Added ${fmt(parsedData.amount)} to ${parsedData.category}`);
+      App.render();
+    };
+
+    panel.querySelector('#add-voice-retry').onclick = () => {
+      Voice.stop();
+      startListening();
+    };
+
+    setTimeout(() => startListening(), 150);
+    return panel;
+  }
+
+  function renderManualForm(year, month, defaultSection, container) {
+    const settings = DB.getSettings();
+    const div = el('div', 'add-form');
+    div.innerHTML = `
+      <div class="form-group">
+        <label class="form-label">Transaction Type</label>
+        <div class="type-selector">
+          ${Object.entries({ income:['💚','Income'], fixedExpenses:['🔵','Fixed'], variableExpenses:['🟡','Variable'], debt:['🔴','Debt'], savings:['🟣','Savings'] }).map(([k,[icon,label]]) => `
+            <div class="type-btn${k===defaultSection?' active':''}" data-section="${k}"><span class="type-icon">${icon}</span>${label}</div>`).join('')}
+        </div>
+      </div>
+      <div id="add-fields"></div>
+      <div class="modal-footer" style="border:none;padding:0">
+        <button class="btn btn-ghost" id="add-cancel">Cancel</button>
+        <button class="btn btn-gold" id="add-save">Save Transaction</button>
+      </div>`;
+
+    container.appendChild(div);
 
     let selectedSection = defaultSection;
     renderAddFields(selectedSection, settings);
 
-    body.querySelectorAll('.type-btn').forEach(btn => {
+    div.querySelectorAll('.type-btn').forEach(btn => {
       btn.onclick = () => {
-        body.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        div.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selectedSection = btn.dataset.section;
         renderAddFields(selectedSection, settings);
@@ -1174,12 +1295,12 @@ const Pages = (() => {
   }
 
   function closeAddModal() {
+    Voice.stop();
     document.getElementById('add-modal').style.display = 'none';
   }
 
   function openEditModal(year, month, section, idx, item) {
-    // Reuse add modal but pre-fill
-    openAddModal(year, month, section);
+    openAddModal(year, month, section, true);
     setTimeout(() => {
       const v = id => document.getElementById(id);
       if (section === 'income') {
