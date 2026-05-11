@@ -1110,13 +1110,28 @@ const Pages = (() => {
         transcriptEl.textContent = `"${result.transcript}"`;
 
         if (result.isFinal) {
+          // Show processing state while async AI call resolves
+          parsedEl.className = 'voice-parsed show';
+          parsedEl.textContent = 'Processing…';
+
+          // result.parsed is already awaited in voice.js onresult handler
           parsedData = result.parsed;
           const sectionLabel = parsedData.section === 'income' ? 'Income' :
                                parsedData.section === 'fixedExpenses' ? 'Fixed Expense' :
                                parsedData.section === 'variableExpenses' ? 'Variable Expense' :
                                parsedData.section === 'debt' ? 'Debt Payment' : 'Savings';
-          parsedEl.className = 'voice-parsed show';
+
+          let statusLine = '';
+          if (parsedData._aiUsed) {
+            statusLine = '<div style="font-size:0.75rem;color:#7c6ef8;margin-bottom:6px">✦ AI powered</div>';
+          } else if (parsedData._aiError && parsedData._aiError.includes('No API key')) {
+            statusLine = '<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ No API key — add your Claude key in Settings</div>';
+          } else if (parsedData._aiError) {
+            statusLine = `<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ AI unavailable — using basic parsing</div>`;
+          }
+
           parsedEl.innerHTML = `
+            ${statusLine}
             <strong>I heard:</strong><br>
             💰 Amount: <strong>${parsedData.amount ? fmt(parsedData.amount) : 'not detected'}</strong><br>
             📁 Type: <strong>${sectionLabel}</strong><br>

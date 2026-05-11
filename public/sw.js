@@ -1,5 +1,5 @@
 // Tally AI service worker — minimum required for PWA install + light offline shell
-const CACHE_NAME = 'tally-shell-v7';
+const CACHE_NAME = 'tally-shell-v8';
 const SHELL = [
   '/',
   '/login.html',
