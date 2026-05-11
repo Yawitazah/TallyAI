@@ -1300,6 +1300,15 @@ const Pages = (() => {
         </div>
       </div>
 
+      <div class="settings-section" id="install-app-section">
+        <div class="settings-title">📱 Install Tally on your phone</div>
+        <div class="settings-desc" style="margin-bottom:12px">
+          Add Tally to your home screen for a fullscreen app experience — no URL bar,
+          no browser chrome, instant launch from your home screen.
+        </div>
+        <div id="install-app-body"></div>
+      </div>
+
       <div class="settings-section">
         <div class="settings-title">Connected Banks (Plaid)</div>
         <div class="settings-desc" style="margin-bottom:12px">
@@ -1466,6 +1475,83 @@ const Pages = (() => {
       </div>`;
 
     setTimeout(() => {
+      // ── Install App (PWA) section ──
+      const installBody = document.getElementById('install-app-body');
+      if (installBody && window.PWA) {
+        function renderInstall() {
+          if (PWA.installed()) {
+            installBody.innerHTML = `
+              <div class="install-card install-card-success">
+                <div class="install-icon">✓</div>
+                <div class="install-text">
+                  <div class="install-title">You're using the installed app</div>
+                  <div class="install-sub">Tally is running fullscreen from your home screen.</div>
+                </div>
+              </div>`;
+            return;
+          }
+          if (PWA.canInstall()) {
+            installBody.innerHTML = `
+              <button class="btn btn-primary" id="pwa-install-btn" style="font-size:0.95rem;padding:12px 20px">
+                📲 Install Tally to home screen
+              </button>
+              <div class="install-hint">After installing, you'll find Tally on your home screen like any other app — fullscreen, no URL bar.</div>`;
+            document.getElementById('pwa-install-btn').onclick = async () => {
+              const { outcome } = await PWA.install();
+              if (outcome === 'accepted') showToast('✓ Tally installed!');
+              else if (outcome === 'dismissed') showToast('Install cancelled.');
+              setTimeout(renderInstall, 300);
+            };
+            return;
+          }
+          if (PWA.isIOS()) {
+            installBody.innerHTML = `
+              <div class="install-card">
+                <div class="install-icon">🍎</div>
+                <div class="install-text">
+                  <div class="install-title">Install on iPhone / iPad</div>
+                  <div class="install-sub">
+                    Open this site in <b>Safari</b>, then tap the <b>Share</b> icon
+                    <span style="font-size:1.1rem">⬆️</span> at the bottom of the screen and choose
+                    <b>"Add to Home Screen"</b>.
+                  </div>
+                </div>
+              </div>`;
+            return;
+          }
+          if (PWA.isAndroid()) {
+            installBody.innerHTML = `
+              <div class="install-card">
+                <div class="install-icon">📱</div>
+                <div class="install-text">
+                  <div class="install-title">Install on Android</div>
+                  <div class="install-sub">
+                    Open Chrome's menu (⋮ in the top-right), then tap
+                    <b>"Install app"</b> or <b>"Add to Home screen"</b>.
+                    If you don't see it, refresh this page and try again.
+                  </div>
+                </div>
+              </div>`;
+            return;
+          }
+          // Desktop fallback
+          installBody.innerHTML = `
+            <div class="install-card">
+              <div class="install-icon">💻</div>
+              <div class="install-text">
+                <div class="install-title">Install on desktop</div>
+                <div class="install-sub">
+                  In Chrome or Edge, look for an install icon (⊕ or 📥) in the address bar,
+                  or open the browser menu and choose <b>"Install Tally AI"</b>.
+                </div>
+              </div>
+            </div>`;
+        }
+        renderInstall();
+        document.addEventListener('pwa:installable', renderInstall);
+        document.addEventListener('pwa:installed',   renderInstall);
+      }
+
       // Provider tabs
       div.querySelectorAll('.theme-choice').forEach(btn => {
         btn.onclick = () => App.applyTheme(btn.dataset.theme, true);

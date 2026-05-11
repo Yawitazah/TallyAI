@@ -543,3 +543,53 @@ const App = (() => {
 })();
 
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// ── PWA: register service worker + capture install prompt ──
+window.PWA = (() => {
+  let deferredPrompt = null;
+  let isInstalled = false;
+
+  function checkInstalled() {
+    isInstalled = window.matchMedia('(display-mode: standalone)').matches ||
+                  window.navigator.standalone === true;
+    return isInstalled;
+  }
+
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    document.dispatchEvent(new CustomEvent('pwa:installable'));
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    isInstalled = true;
+    document.dispatchEvent(new CustomEvent('pwa:installed'));
+  });
+
+  async function install() {
+    if (!deferredPrompt) return { outcome: 'unavailable' };
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    return { outcome };
+  }
+
+  function canInstall() { return !!deferredPrompt; }
+  function installed()  { return checkInstalled(); }
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  }
+  function isAndroid() { return /Android/.test(navigator.userAgent); }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.warn('SW registration failed:', err);
+      });
+    });
+  }
+
+  checkInstalled();
+  return { install, canInstall, installed, isIOS, isAndroid };
+})();
