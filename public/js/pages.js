@@ -1110,16 +1110,20 @@ const Pages = (() => {
         transcriptEl.textContent = `"${result.transcript}"`;
 
         if (result.isFinal) {
-          // Show processing state while async AI call resolves
           parsedEl.className = 'voice-parsed show';
           parsedEl.textContent = 'Processing…';
 
-          // result.parsed is already awaited in voice.js onresult handler
           parsedData = result.parsed;
           const sectionLabel = parsedData.section === 'income' ? 'Income' :
                                parsedData.section === 'fixedExpenses' ? 'Fixed Expense' :
                                parsedData.section === 'variableExpenses' ? 'Variable Expense' :
                                parsedData.section === 'debt' ? 'Debt Payment' : 'Savings';
+
+          // Check if the detected account is new (not in user's saved accounts list)
+          const knownAccounts = DB.getSettings().accounts || [];
+          const detectedAccount = parsedData.account || '';
+          const isNewAccount = detectedAccount &&
+            !knownAccounts.some(a => a.toLowerCase() === detectedAccount.toLowerCase());
 
           let statusLine = '';
           if (parsedData._aiUsed) {
@@ -1127,16 +1131,38 @@ const Pages = (() => {
           } else if (parsedData._aiError && parsedData._aiError.includes('No API key')) {
             statusLine = '<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ No API key — add your Claude key in Settings</div>';
           } else if (parsedData._aiError) {
-            statusLine = `<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ AI unavailable — using basic parsing</div>`;
+            statusLine = '<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ AI unavailable — using basic parsing</div>';
           }
+
+          const newAccountPrompt = isNewAccount
+            ? `<div class="voice-new-account" id="add-voice-new-acct">
+                <span>${detectedAccount} isn't in your accounts.</span>
+                <button class="btn-add-account" id="add-acct-yes">+ Add it</button>
+               </div>`
+            : '';
 
           parsedEl.innerHTML = `
             ${statusLine}
-            <strong>I heard:</strong><br>
-            💰 Amount: <strong>${parsedData.amount ? fmt(parsedData.amount) : 'not detected'}</strong><br>
-            📁 Type: <strong>${sectionLabel}</strong><br>
-            🏷 Category: <strong>${parsedData.category}</strong><br>
-            🏦 Account: <strong>${parsedData.account || 'not specified'}</strong>`;
+            <div class="voice-summary">
+              <span class="voice-amount">${parsedData.amount ? fmt(parsedData.amount) : '?'}</span>
+              <span class="voice-dot">·</span>
+              <span>${parsedData.category}</span>
+              <span class="voice-dot">·</span>
+              <span>${detectedAccount || 'no account'}</span>
+            </div>
+            <div class="voice-meta">${sectionLabel}</div>
+            ${newAccountPrompt}`;
+
+          if (isNewAccount) {
+            parsedEl.querySelector('#add-acct-yes').onclick = function () {
+              const s = DB.getSettings();
+              s.accounts.push(detectedAccount);
+              DB.save();
+              this.closest('.voice-new-account').innerHTML =
+                `<span style="color:#7c6ef8">✓ ${detectedAccount} added to your accounts.</span>`;
+            };
+          }
+
           actionsEl.style.display = 'flex';
         }
       });

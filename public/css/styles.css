@@ -792,6 +792,13 @@ body {
 .voice-parsed.show { display: block; }
 .voice-parsed strong { color: var(--success); }
 .voice-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+.voice-summary { font-size: 1.05rem; font-weight: 600; color: var(--text1); margin: 10px 0 4px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; }
+.voice-amount { color: var(--success); }
+.voice-dot { color: var(--text3); }
+.voice-meta { font-size: 0.78rem; color: var(--text2); margin-bottom: 10px; }
+.voice-new-account { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 0.82rem; color: var(--text2); background: var(--bg2); border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
+.btn-add-account { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-add-account:hover { opacity: 0.85; }
 
 /* ===== BUTTONS ===== */
 .btn {
