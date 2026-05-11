@@ -69,25 +69,51 @@ function autoClassify(description, amount) {
   const d = description.toLowerCase();
   const settings = DB.getSettings();
 
+  // Each map is sorted longest-key-first before iterating so that specific
+  // multi-word merchants ("food lion", "whole foods") always win over the
+  // shorter substring they contain ("food").
+
   // Income keywords
-  const incomeKw = { 'salary':'BBB Salary','paycheck':'BBB Salary','zah brand':'Zah Brand Solutions','plannet':'PlanNet','freelance':'Content/Freelance','content':'Content/Freelance','gift':'Gifts','tax refund':'Tax Refund','refund':'Refunds','dejzah':'Dejzah.Life' };
-  for (const [k,v] of Object.entries(incomeKw)) {
+  const incomeKw = { 'tax refund':'Tax Refund','zah brand':'Zah Brand Solutions','paycheck':'BBB Salary','freelance':'Content/Freelance','content':'Content/Freelance','plannet':'PlanNet','dejzah':'Dejzah.Life','salary':'BBB Salary','refund':'Refunds','gift':'Gifts' };
+  for (const [k,v] of Object.entries(incomeKw).sort((a,b) => b[0].length - a[0].length)) {
     if (d.includes(k)) return { section: 'income', category: v };
   }
 
   // Fixed expense keywords
-  const fixedKw = { 'rent':'Rent','wifi':'Wifi','internet':'Wifi','comporium':'Wifi','electric':'Utilities','utilities':'Utilities','power':'Utilities','netflix':'Netflix','spotify':'Spotify','amazon prime':'Amazon Prime','apple ':'Apple','chatgpt':'ChatGPT','canva':'Canva','att ':'ATT','phone':'ATT','la fitness':'LA Fitness','gym':'LA Fitness','nelnet':'Nelnet','student loan':'Nelnet','insurance':'Car Insurance','dance':'Dance','suno':'Suno','adobe':'Adobe','capcut':'CapCut','elevenlabs':'ElevenLabs','gamma':'Gamma','google one':'Google One','higgsfield':'Higgsfield','wix':'Wix: HOY','plannet':'PlanNet Subscription','doordash dash':'Doordash DashPass','instacart+':'Instacart+','allowance':'Dejah Allowance','renters':'Renters Insurance','godaddy':'GoDaddy' };
-  for (const [k,v] of Object.entries(fixedKw)) {
+  const fixedKw = { 'amazon prime':'Amazon Prime','student loan':'Nelnet','doordash dash':'Doordash DashPass','google one':'Google One','la fitness':'LA Fitness','renters':'Renters Insurance','instacart+':'Instacart+','allowance':'Dejah Allowance','comporium':'Wifi','internet':'Wifi','electric':'Utilities','utilities':'Utilities','insurance':'Car Insurance','higgsfield':'Higgsfield','elevenlabs':'ElevenLabs','godaddy':'GoDaddy','capcut':'CapCut','chatgpt':'ChatGPT','netflix':'Netflix','spotify':'Spotify','plannet':'PlanNet Subscription','nelnet':'Nelnet','adobe':'Adobe','canva':'Canva','gamma':'Gamma','suno':'Suno','apple ':'Apple','power':'Utilities','phone':'ATT','dance':'Dance','wifi':'Wifi','rent':'Rent','gym':'LA Fitness','wix':'Wix: HOY','att ':'ATT' };
+  for (const [k,v] of Object.entries(fixedKw).sort((a,b) => b[0].length - a[0].length)) {
     if (d.includes(k)) return { section: 'fixedExpenses', category: v };
   }
 
-  // Variable keywords
-  const variableKw = { 'grocery':'Groceries','kroger':'Groceries','walmart':'Groceries','aldi':'Groceries','target':'Groceries','costco':'Groceries','food':'Eating Out','restaurant':'Eating Out','doordash':'Eating Out','ubereats':'Eating Out','chick-fil':'Eating Out','mcdonald':'Eating Out','gas':'Gas','shell':'Gas','bp ':'Gas','exxon':'Gas','chevron':'Gas','car wash':'Gas','mechanic':'Auto / Car Maintenance','oil change':'Auto / Car Maintenance','entertainment':'Entertainment / Date','movie':'Entertainment / Date','date':'Entertainment / Date','clothing':'Clothes Shopping','clothes':'Clothes Shopping','fashion':'Clothes Shopping','shoes':'Clothes Shopping','household':'Household Shopping','home depot':'Household Shopping','lowes':'Household Shopping','personal care':'Personal Care','hair':'Personal Care','nail':'Personal Care','salon':'Personal Care','spa':'Personal Care','doctor':'Medical / Health','pharmacy':'Medical / Health','medical':'Medical / Health','school':'School / Extra-Curricular','tuition':'School / Extra-Curricular','baby':'Baby','diaper':'Baby','charity':'Charity','church':'Charity','travel':'Travel','hotel':'Travel','flight':'Travel','airbnb':'Travel','business':'Misc Business Expenses' };
-  for (const [k,v] of Object.entries(variableKw)) {
+  // Variable keywords — multi-word merchants listed explicitly so they beat
+  // any shorter key they contain (e.g. "food lion" beats "food")
+  const variableKw = {
+    // Grocery stores (specific chains first, then generic)
+    'harris teeter':'Groceries','trader joe':'Groceries','whole foods':'Groceries','food lion':'Groceries','food 4 less':'Groceries','grocery outlet':'Groceries',
+    'grocery':'Groceries','kroger':'Groceries','walmart':'Groceries','publix':'Groceries','safeway':'Groceries','wegmans':'Groceries','sprouts':'Groceries','lidl':'Groceries','aldi':'Groceries','target':'Groceries','costco':'Groceries',
+    // Restaurants / delivery
+    'chick-fil':'Eating Out','mcdonald':'Eating Out','doordash':'Eating Out','ubereats':'Eating Out','grubhub':'Eating Out','chipotle':'Eating Out','starbucks':'Eating Out','dunkin':'Eating Out','subway':'Eating Out','restaurant':'Eating Out',
+    // "food" last — generic and easily shadowed by merchant names above
+    'food':'Eating Out',
+    // Gas
+    'oil change':'Auto / Car Maintenance','car wash':'Gas','exxon':'Gas','chevron':'Gas','shell':'Gas','bp ':'Gas','gas':'Gas',
+    // Auto
+    'mechanic':'Auto / Car Maintenance',
+    // Entertainment
+    'home depot':'Household Shopping','entertainment':'Entertainment / Date','movie':'Entertainment / Date','date':'Entertainment / Date',
+    // Shopping
+    'household':'Household Shopping','lowes':'Household Shopping','clothing':'Clothes Shopping','clothes':'Clothes Shopping','fashion':'Clothes Shopping','shoes':'Clothes Shopping',
+    // Personal care
+    'personal care':'Personal Care','salon':'Personal Care','hair':'Personal Care','nail':'Personal Care','spa':'Personal Care',
+    // Health
+    'pharmacy':'Medical / Health','medical':'Medical / Health','doctor':'Medical / Health',
+    // Other
+    'school':'School / Extra-Curricular','tuition':'School / Extra-Curricular','diaper':'Baby','baby':'Baby','church':'Charity','charity':'Charity','airbnb':'Travel','flight':'Travel','travel':'Travel','hotel':'Travel','business':'Misc Business Expenses',
+  };
+  for (const [k,v] of Object.entries(variableKw).sort((a,b) => b[0].length - a[0].length)) {
     if (d.includes(k)) return { section: 'variableExpenses', category: v };
   }
 
-  // Default: if starts with $ and big amount assume variable
   return { section: 'variableExpenses', category: 'Other' };
 }
 

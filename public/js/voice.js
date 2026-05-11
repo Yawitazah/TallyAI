@@ -42,9 +42,35 @@ const Voice = (() => {
   function parseTranscript(text) {
     const t = text.toLowerCase().trim();
 
-    // Extract amount — look for $ or number patterns
-    const amtMatch = t.match(/\$?(\d+(?:[.,]\d{1,2})?)/);
-    const amount = amtMatch ? parseFloat(amtMatch[1].replace(',', '')) : null;
+    // Extract amount — handles STT decimal artifacts before standard patterns
+    // e.g. "24 or 45" / "24 and 45" → $24.45 (speech-to-text says "or"/"and" for the decimal point)
+    let amount = null;
+    let amtMatch;
+    // Priority 1: explicit $ sign  "$24.45" or "$ 24 45"
+    amtMatch = t.match(/\$\s*(\d+(?:[.,]\d{1,2})?)/);
+    if (amtMatch) {
+      amount = parseFloat(amtMatch[1].replace(',', '.'));
+    }
+    // Priority 2: spoken decimal artifacts  "24 or 45"  "24 and 45"
+    if (!amount) {
+      amtMatch = t.match(/\b(\d{1,5})\s+(?:or|and)\s+(\d{2})\b/);
+      if (amtMatch) amount = parseFloat(`${amtMatch[1]}.${amtMatch[2]}`);
+    }
+    // Priority 3: standard decimal  "24.45"  "24,45"
+    if (!amount) {
+      amtMatch = t.match(/\b(\d+[.,]\d{1,2})\b/);
+      if (amtMatch) amount = parseFloat(amtMatch[1].replace(',', '.'));
+    }
+    // Priority 4: two bare numbers after a spend verb  "spent 24 45"  "paid 24 45"
+    if (!amount) {
+      amtMatch = t.match(/(?:spent|paid|cost|bought|charged|owe)\s+(\d{1,5})\s+(\d{2})\b/);
+      if (amtMatch) amount = parseFloat(`${amtMatch[1]}.${amtMatch[2]}`);
+    }
+    // Priority 5: plain integer fallback
+    if (!amount) {
+      amtMatch = t.match(/\b(\d+)\b/);
+      if (amtMatch) amount = parseFloat(amtMatch[1]);
+    }
 
     // Detect direction
     const isIncome = /received|got|made|earned|income|paid me|deposited|salary|paycheck|bonus/.test(t);
@@ -67,16 +93,36 @@ const Voice = (() => {
     }
 
     // Detect account mention
-    const accounts = DB.getSettings().accounts;
+    // Sort longest-first so "Cash App" matches before "Cash", "Capital One" before "Capital", etc.
+    const accounts = [...DB.getSettings().accounts].sort((a, b) => b.length - a.length);
     let account = '';
     for (const a of accounts) {
       if (t.includes(a.toLowerCase())) { account = a; break; }
     }
     if (!account) {
-      if (t.includes('capital one') || t.includes('capital')) account = 'Capital One';
-      else if (t.includes('citi')) account = 'Citi';
-      else if (t.includes('truliant')) account = 'Truliant Business';
-      else if (t.includes('pnc')) account = 'PNC';
+      // Ordered longest → shortest to avoid shorter substrings stealing the match
+      const acctFallbacks = [
+        ['bank of america', 'Bank of America'],
+        ['american express', 'Amex'],
+        ['wells fargo', 'Wells Fargo'],
+        ['capital one', 'Capital One'],
+        ['apple card', 'Apple'],
+        ['apple pay', 'Apple'],
+        ['cash app', 'Cash App'],
+        ['truliant', 'Truliant Business'],
+        ['discover', 'Discover'],
+        ['paypal', 'PayPal'],
+        ['venmo', 'Venmo'],
+        ['zelle', 'Zelle'],
+        ['chase', 'Chase'],
+        ['capital', 'Capital One'],
+        ['amex', 'Amex'],
+        ['citi', 'Citi'],
+        ['pnc', 'PNC'],
+      ];
+      for (const [kw, name] of acctFallbacks) {
+        if (t.includes(kw)) { account = name; break; }
+      }
     }
 
     // Detect date
