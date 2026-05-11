@@ -445,8 +445,9 @@ Give concise, actionable advice using specific dollar amounts from their data. B
 // ── AI Voice Parsing (protected, dual provider) ──
 app.post('/api/voice/parse', requireAuth, (req, res) => {
   const { transcript, apiKey, provider, accounts } = req.body;
+  console.log('[/api/voice/parse] hit — provider:', provider, 'hasKey:', !!apiKey, 'transcript:', transcript);
   if (!transcript) return res.status(400).json({ error: 'No transcript provided.' });
-  if (!apiKey) return res.status(400).json({ error: 'No API key provided.' });
+  if (!apiKey) { console.log('[/api/voice/parse] rejected: no API key'); return res.status(400).json({ error: 'No API key provided.' }); }
 
   const accountList = Array.isArray(accounts) && accounts.length ? accounts.join(', ') : 'none specified';
   const systemPrompt = `You are a financial transaction parser. Extract structured data from a spoken transaction description and return ONLY valid JSON.
@@ -488,10 +489,12 @@ Rules:
       apiRes.on('end', () => {
         try {
           const p = JSON.parse(data);
-          if (p.error) return res.status(400).json({ error: p.error.message });
+          if (p.error) { console.log('[/api/voice/parse] OpenAI error:', p.error.message); return res.status(400).json({ error: p.error.message }); }
           const text = p.choices[0].message.content;
-          res.json(JSON.parse(text));
-        } catch (e) { res.status(500).json({ error: 'Could not parse OpenAI response: ' + e.message }); }
+          const parsed = JSON.parse(text);
+          console.log('[/api/voice/parse] OpenAI result:', parsed);
+          res.json(parsed);
+        } catch (e) { console.log('[/api/voice/parse] OpenAI parse error:', e.message); res.status(500).json({ error: 'Could not parse OpenAI response: ' + e.message }); }
       });
     });
     apiReq.on('error', e => res.status(500).json({ error: 'Network error: ' + e.message }));
@@ -514,10 +517,12 @@ Rules:
       apiRes.on('end', () => {
         try {
           const p = JSON.parse(data);
-          if (p.error) return res.status(400).json({ error: p.error.message });
+          if (p.error) { console.log('[/api/voice/parse] Claude error:', p.error.message); return res.status(400).json({ error: p.error.message }); }
           const text = p.content[0].text;
-          res.json(JSON.parse(text));
-        } catch (e) { res.status(500).json({ error: 'Could not parse Claude response: ' + e.message }); }
+          const parsed = JSON.parse(text);
+          console.log('[/api/voice/parse] Claude result:', parsed);
+          res.json(parsed);
+        } catch (e) { console.log('[/api/voice/parse] Claude parse error:', e.message); res.status(500).json({ error: 'Could not parse Claude response: ' + e.message }); }
       });
     });
     apiReq.on('error', e => res.status(500).json({ error: 'Network error: ' + e.message }));

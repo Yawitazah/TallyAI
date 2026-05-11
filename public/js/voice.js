@@ -41,12 +41,14 @@ const Voice = (() => {
 
   async function parseTranscript(text) {
     const settings = DB.getSettings();
-    const cfg = settings.aiConfig || {};
-    const provider = cfg.provider || 'claude';
-    const apiKey = provider === 'openai' ? cfg.openaiApiKey : cfg.aiApiKey;
+    const provider = settings.aiProvider || 'claude';
+    const apiKey = provider === 'openai' ? settings.openaiApiKey : settings.aiApiKey;
+
+    console.log('[Voice] parseTranscript — provider:', provider, 'hasKey:', !!apiKey);
 
     if (apiKey) {
       try {
+        console.log('[Voice] calling /api/voice/parse for:', text);
         const resp = await fetch('/api/voice/parse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -57,30 +59,32 @@ const Voice = (() => {
             accounts: settings.accounts || []
           })
         });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.amount) {
-            const today = new Date();
-            let date = today.toISOString().split('T')[0];
-            if (text.toLowerCase().includes('yesterday')) {
-              const y = new Date(today); y.setDate(y.getDate() - 1);
-              date = y.toISOString().split('T')[0];
-            }
-            return {
-              amount: data.amount,
-              description: data.description || text,
-              section: data.section || 'variableExpenses',
-              category: data.category || 'Other',
-              account: data.account || '',
-              date,
-              isIncome: data.section === 'income',
-              rawText: text
-            };
+        const data = await resp.json();
+        console.log('[Voice] /api/voice/parse response:', data);
+        if (resp.ok && data.amount) {
+          const today = new Date();
+          let date = today.toISOString().split('T')[0];
+          if (text.toLowerCase().includes('yesterday')) {
+            const y = new Date(today); y.setDate(y.getDate() - 1);
+            date = y.toISOString().split('T')[0];
           }
+          return {
+            amount: data.amount,
+            description: data.description || text,
+            section: data.section || 'variableExpenses',
+            category: data.category || 'Other',
+            account: data.account || '',
+            date,
+            isIncome: data.section === 'income',
+            rawText: text
+          };
         }
+        console.warn('[Voice] AI parse failed or missing amount, falling back to regex. data:', data);
       } catch (e) {
-        // fall through to regex
+        console.warn('[Voice] /api/voice/parse error, falling back to regex:', e.message);
       }
+    } else {
+      console.log('[Voice] no API key configured, using regex fallback');
     }
 
     return parseTranscriptRegex(text);
