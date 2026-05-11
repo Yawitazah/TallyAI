@@ -46,10 +46,7 @@ const Voice = (() => {
       const resp = await fetch('/api/voice/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: text,
-          accounts: settings.accounts || []
-        })
+        body: JSON.stringify({ transcript: text, accounts: settings.accounts || [] })
       });
       const data = await resp.json();
       console.log('[Voice] /api/voice/parse response:', resp.status, data);
@@ -68,15 +65,22 @@ const Voice = (() => {
           account: data.account || '',
           date,
           isIncome: data.section === 'income',
-          rawText: text
+          rawText: text,
+          _aiUsed: true
         };
       }
-      console.warn('[Voice] AI parse failed or no amount returned, falling back to regex. status:', resp.status, 'data:', data);
+      // Surface the server error message so the UI can show it
+      const reason = (data && data.error) ? data.error : `status ${resp.status}`;
+      console.warn('[Voice] AI parse failed (' + reason + '), falling back to regex');
+      const fallback = parseTranscriptRegex(text);
+      fallback._aiError = reason;
+      return fallback;
     } catch (e) {
-      console.warn('[Voice] /api/voice/parse error, falling back to regex:', e.message);
+      console.warn('[Voice] /api/voice/parse network error, falling back to regex:', e.message);
+      const fallback = parseTranscriptRegex(text);
+      fallback._aiError = e.message;
+      return fallback;
     }
-
-    return parseTranscriptRegex(text);
   }
 
   function parseTranscriptRegex(text) {
@@ -226,6 +230,11 @@ const VoiceModal = (() => {
 
       if (result.isFinal) {
         btn.classList.remove('listening');
+        // Show processing state while AI call is in flight
+        const parsedEl = document.getElementById('voice-parsed');
+        parsedEl.className = 'voice-parsed show';
+        parsedEl.textContent = 'Processing…';
+        // result.parsed is already resolved (await happened in onresult)
         parsedData = result.parsed;
         showParsed(result.parsed);
       }
@@ -241,7 +250,17 @@ const VoiceModal = (() => {
                     p.section === 'variableExpenses' ? 'Variable Expense' :
                     p.section === 'debt' ? 'Debt Payment' : 'Savings';
 
+    let statusLine = '';
+    if (p._aiUsed) {
+      statusLine = '<div style="font-size:0.75rem;color:#7c6ef8;margin-bottom:6px">✦ AI powered</div>';
+    } else if (p._aiError && p._aiError.includes('No API key')) {
+      statusLine = '<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ No API key — go to Settings to add your Claude key</div>';
+    } else if (p._aiError) {
+      statusLine = `<div style="font-size:0.75rem;color:#f4b942;margin-bottom:6px">⚠ AI unavailable (${p._aiError}) — using basic parsing</div>`;
+    }
+
     el.innerHTML = `
+      ${statusLine}
       <strong>I heard:</strong><br>
       💰 Amount: <strong>${p.amount ? fmt(p.amount) : 'not detected'}</strong><br>
       📁 Type: <strong>${section}</strong><br>
