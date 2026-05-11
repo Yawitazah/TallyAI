@@ -208,6 +208,13 @@ function startUserSession(req, user) {
 }
 
 // ── Static files (login.html accessible without auth) ──
+// Service worker must never be served from browser HTTP cache — the browser
+// uses byte-diff to detect SW updates, so a stale cached sw.js means users
+// never pick up new shell cache versions.
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Auth endpoints ──
